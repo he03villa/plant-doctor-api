@@ -33,7 +33,7 @@ class AuthService
             return null;
         }
 
-        $user = Auth::user()->load('roles');
+        $user = JWTAuth::user()->load('roles');
 
         return [
             'user' => $user,
