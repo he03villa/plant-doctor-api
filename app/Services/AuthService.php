@@ -33,7 +33,7 @@ class AuthService
             return null;
         }
 
-        $user = JWTAuth::user()->load('roles');
+        $user = Auth::user()->load('roles');
 
         return [
             'user' => $user,
@@ -57,12 +57,12 @@ class AuthService
 
     public function me(): User
     {
-        return JWTAuth::user()->load('roles');
+        return Auth::user()->load('roles');
     }
 
     public function updateProfile(array $data): User
     {
-        $user = JWTAuth::user();
+        $user = Auth::user();
         $user->update($data);
         return $user->load('roles');
     }
