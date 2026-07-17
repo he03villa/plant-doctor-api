@@ -1,0 +1,76 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: plant-doctor-api_nginx
+    restart: always
+    ports:
+      - 8005:80
+    volumes:
+      - ./nginx-main.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - .:/code:ro
+      - ./storage:/code/storage:ro
+    depends_on:
+      - plant-doctor-api
+
+  plant-doctor-api:
+    build: .
+    container_name: plant-doctor-api
+    restart: always
+    extra_hosts:
+      - "${APP_HOST:-localhost}:host-gateway"
+    environment:
+      SERVER_NAME: ":9000"
+      CADDY_GLOBAL_OPTIONS: "auto_https off"
+    volumes:
+      - .:/code
+      - ./.env:/code/.env:ro
+      - ./storage:/code/storage
+      - ./storage/supervisor-logs:/var/log/supervisor
+    expose:
+      - "9000"
+    ports:
+      - "8006:8006"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgis/postgis:15-3.4-alpine
+    container_name: plant-doctor-api_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: plant_doctor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-postgis.sql:/docker-entrypoint-initdb.d/001-init-postgis.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d plant_doctor"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: plant-doctor-api_redis
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
