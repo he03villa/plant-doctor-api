@@ -40,15 +40,49 @@ class OrderController extends Controller
                 type: 'object',
                 required: ['ocr_text'],
                 properties: [
-                    new OA\Property(property: 'ocr_text', type: 'string', example: 'FACTURA #1234\nFecha: 2024-01-15\n...'),
+                    new OA\Property(property: 'ocr_text', type: 'string', example: 'FACTURA #1234\nFecha: 2024-01-15\nProveedor: Distribuidora ABC\nSubtotal: 120000\nIVA: 19000\nTotal: 139000'),
                     new OA\Property(property: 'image', type: 'string', format: 'binary', description: 'Optional invoice image'),
                 ]
             )
         ),
         responses: [
-            new OA\Response(response: 200, description: 'Invoice parsed'),
-            new OA\Response(response: 422, description: 'Validation error'),
-            new OA\Response(response: 500, description: 'Server error'),
+            new OA\Response(response: 200, description: 'Invoice parsed',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Invoice parsed successfully'),
+                        new OA\Property(property: 'data', type: 'object', properties: [
+                            new OA\Property(property: 'invoice_image_url', type: 'string', nullable: true, example: 'https://res.cloudinary.com/demo/image/upload/invoices/img001.jpg'),
+                            new OA\Property(property: 'ocr_raw_text', type: 'string', example: 'FACTURA #1234\nFecha: 2024-01-15\n...'),
+                            new OA\Property(property: 'parsed_data', type: 'object', properties: [
+                                new OA\Property(property: 'invoice_number', type: 'string', example: '1234'),
+                                new OA\Property(property: 'invoice_date', type: 'string', example: '2024-01-15'),
+                                new OA\Property(property: 'supplier_name', type: 'string', example: 'Distribuidora ABC'),
+                                new OA\Property(property: 'subtotal', type: 'number', example: 120000),
+                                new OA\Property(property: 'tax', type: 'number', example: 19000),
+                                new OA\Property(property: 'total', type: 'number', example: 139000),
+                                new OA\Property(property: 'currency', type: 'string', example: 'COP'),
+                                new OA\Property(property: 'items', type: 'array', items: new OA\Items(
+                                    type: 'object',
+                                    properties: [
+                                        new OA\Property(property: 'product_name', type: 'string', example: 'Fertilizante NPK'),
+                                        new OA\Property(property: 'quantity', type: 'integer', example: 10),
+                                        new OA\Property(property: 'unit_price', type: 'number', example: 12000),
+                                        new OA\Property(property: 'total_price', type: 'number', example: 120000),
+                                    ]
+                                )),
+                            ]),
+                        ]),
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function parse(ParseInvoiceRequest $request): JsonResponse
@@ -83,9 +117,25 @@ class OrderController extends Controller
             content: new OA\JsonContent(ref: '#/components/schemas/StoreOrderRequest')
         ),
         responses: [
-            new OA\Response(response: 201, description: 'Order created'),
-            new OA\Response(response: 422, description: 'Validation error'),
-            new OA\Response(response: 500, description: 'Server error'),
+            new OA\Response(response: 201, description: 'Order created',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Order created'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/Order'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Store not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function store(StoreOrderRequest $request): JsonResponse
@@ -117,8 +167,25 @@ class OrderController extends Controller
         summary: 'List user orders',
         tags: ['Orders'],
         security: [['jwt' => []]],
+        parameters: [
+            new OA\Parameter(name: 'store_id', in: 'query', required: false, schema: new OA\Schema(type: 'integer'), description: 'Filter by store ID'),
+        ],
         responses: [
-            new OA\Response(response: 200, description: 'Orders listed'),
+            new OA\Response(response: 200, description: 'Orders listed',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Success'),
+                        new OA\Property(property: 'data', type: 'object', properties: [
+                            new OA\Property(property: 'data', type: 'array', items: new OA\Items(ref: '#/components/schemas/Order')),
+                            new OA\Property(property: 'current_page', type: 'integer', example: 1),
+                            new OA\Property(property: 'per_page', type: 'integer', example: 15),
+                            new OA\Property(property: 'total', type: 'integer', example: 4),
+                        ]),
+                    ]
+                )
+            ),
         ]
     )]
     public function index(Request $request): AnonymousResourceCollection
@@ -142,8 +209,19 @@ class OrderController extends Controller
             new OA\Parameter(name: 'order', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Order retrieved'),
-            new OA\Response(response: 404, description: 'Order not found'),
+            new OA\Response(response: 200, description: 'Order retrieved',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Success'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/Order'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Order not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function show(Request $request, int $id): JsonResponse
@@ -178,9 +256,22 @@ class OrderController extends Controller
             content: new OA\JsonContent(ref: '#/components/schemas/StoreOrderRequest')
         ),
         responses: [
-            new OA\Response(response: 200, description: 'Order updated'),
-            new OA\Response(response: 404, description: 'Order not found'),
-            new OA\Response(response: 422, description: 'Validation error'),
+            new OA\Response(response: 200, description: 'Order updated',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Order updated'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/Order'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Order not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
         ]
     )]
     public function update(StoreOrderRequest $request, int $id): JsonResponse
@@ -215,8 +306,12 @@ class OrderController extends Controller
             new OA\Parameter(name: 'order', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Order deleted'),
-            new OA\Response(response: 404, description: 'Order not found'),
+            new OA\Response(response: 200, description: 'Order deleted',
+                content: new OA\JsonContent(ref: '#/components/schemas/SuccessResponse')
+            ),
+            new OA\Response(response: 404, description: 'Order not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function destroy(Request $request, int $id): JsonResponse
@@ -249,8 +344,19 @@ class OrderController extends Controller
             new OA\Parameter(name: 'order', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Order verified'),
-            new OA\Response(response: 404, description: 'Order not found'),
+            new OA\Response(response: 200, description: 'Order verified',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Order verified'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/Order'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Order not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function verify(Request $request, int $id): JsonResponse

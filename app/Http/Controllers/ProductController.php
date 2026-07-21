@@ -30,12 +30,28 @@ class ProductController extends Controller
         security: [['jwt' => []]],
         parameters: [
             new OA\Parameter(name: 'store', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'category', in: 'query', required: false, schema: new OA\Schema(type: 'string')),
-            new OA\Parameter(name: 'visible_only', in: 'query', required: false, schema: new OA\Schema(type: 'boolean')),
+            new OA\Parameter(name: 'category', in: 'query', required: false, schema: new OA\Schema(type: 'string'), description: 'Filter by category'),
+            new OA\Parameter(name: 'visible_only', in: 'query', required: false, schema: new OA\Schema(type: 'boolean'), description: 'Show only products visible on map'),
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Products listed'),
-            new OA\Response(response: 404, description: 'Store not found'),
+            new OA\Response(response: 200, description: 'Products listed',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Success'),
+                        new OA\Property(property: 'data', type: 'object', properties: [
+                            new OA\Property(property: 'data', type: 'array', items: new OA\Items(ref: '#/components/schemas/StoreProduct')),
+                            new OA\Property(property: 'current_page', type: 'integer', example: 1),
+                            new OA\Property(property: 'per_page', type: 'integer', example: 15),
+                            new OA\Property(property: 'total', type: 'integer', example: 8),
+                        ]),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Store not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function index(Request $request, int $storeId): AnonymousResourceCollection
@@ -78,9 +94,25 @@ class ProductController extends Controller
             content: new OA\JsonContent(ref: '#/components/schemas/CreateStoreProductRequest')
         ),
         responses: [
-            new OA\Response(response: 201, description: 'Product created'),
-            new OA\Response(response: 404, description: 'Store not found'),
-            new OA\Response(response: 422, description: 'Validation error'),
+            new OA\Response(response: 201, description: 'Product created',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Product created'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/StoreProduct'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Store not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function store(CreateStoreProductRequest $request, int $storeId): JsonResponse
@@ -120,8 +152,19 @@ class ProductController extends Controller
             new OA\Parameter(name: 'product', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Product retrieved'),
-            new OA\Response(response: 404, description: 'Product not found'),
+            new OA\Response(response: 200, description: 'Product retrieved',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Success'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/StoreProduct'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Product not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function show(int $storeId, int $id): JsonResponse
@@ -157,9 +200,22 @@ class ProductController extends Controller
             content: new OA\JsonContent(ref: '#/components/schemas/UpdateStoreProductRequest')
         ),
         responses: [
-            new OA\Response(response: 200, description: 'Product updated'),
-            new OA\Response(response: 404, description: 'Product not found'),
-            new OA\Response(response: 422, description: 'Validation error'),
+            new OA\Response(response: 200, description: 'Product updated',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Product updated'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/StoreProduct'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Product not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
         ]
     )]
     public function update(UpdateStoreProductRequest $request, int $storeId, int $id): JsonResponse
@@ -195,8 +251,12 @@ class ProductController extends Controller
             new OA\Parameter(name: 'product', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Product deleted'),
-            new OA\Response(response: 404, description: 'Product not found'),
+            new OA\Response(response: 200, description: 'Product deleted',
+                content: new OA\JsonContent(ref: '#/components/schemas/SuccessResponse')
+            ),
+            new OA\Response(response: 404, description: 'Product not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function destroy(int $storeId, int $id): JsonResponse
@@ -230,8 +290,19 @@ class ProductController extends Controller
             new OA\Parameter(name: 'product', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Visibility toggled'),
-            new OA\Response(response: 404, description: 'Product not found'),
+            new OA\Response(response: 200, description: 'Visibility toggled',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Visibility toggled'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/StoreProduct'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Product not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function toggleVisibility(int $storeId, int $id): JsonResponse
