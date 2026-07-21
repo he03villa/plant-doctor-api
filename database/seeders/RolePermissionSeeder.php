@@ -17,6 +17,7 @@ class RolePermissionSeeder extends Seeder
         Role::create(['name' => 'admin', 'guard_name' => $guard]);
         Role::create(['name' => 'expert', 'guard_name' => $guard]);
         Role::create(['name' => 'user', 'guard_name' => $guard]);
+        Role::create(['name' => 'store_owner', 'guard_name' => $guard]);
 
         // Create permissions
         $permissions = [
@@ -24,6 +25,9 @@ class RolePermissionSeeder extends Seeder
             'diseases.view', 'diseases.create', 'diseases.update', 'diseases.delete',
             'diagnoses.create', 'diagnoses.view', 'diagnoses.review', 'diagnoses.verify',
             'users.view', 'users.manage',
+            'orders.create', 'orders.view', 'orders.update', 'orders.delete',
+            'stores.manage', 'stores.view',
+            'products.create', 'products.view', 'products.update', 'products.delete',
         ];
 
         foreach ($permissions as $permission) {
@@ -35,6 +39,7 @@ class RolePermissionSeeder extends Seeder
             'admin' => $permissions,
             'expert' => ['plants.view', 'diseases.view', 'diagnoses.view', 'diagnoses.review', 'diagnoses.verify'],
             'user' => ['plants.create', 'plants.view', 'plants.update', 'plants.delete', 'diseases.view', 'diagnoses.create', 'diagnoses.view'],
+            'store_owner' => ['orders.create', 'orders.view', 'orders.update', 'orders.delete', 'stores.manage', 'stores.view', 'products.create', 'products.view', 'products.update', 'products.delete', 'plants.view', 'diseases.view'],
         ];
 
         foreach ($rolePermissions as $roleName => $rolePerms) {

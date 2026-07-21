@@ -18,6 +18,8 @@ class StoreDiagnosisRequest extends FormRequest
             'image' => 'required|image|max:10240',
             'organ' => 'nullable|string|in:leaf,flower,fruit,bark',
             'notes' => 'nullable|string',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
         ];
     }
 }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Disease extends Model
 {
@@ -33,6 +34,11 @@ class Disease extends Model
     public function diagnoses(): HasMany
     {
         return $this->hasMany(Diagnosis::class);
+    }
+
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'disease_products');
     }
 
     public function getImageUrlAttribute(): ?string

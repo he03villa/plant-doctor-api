@@ -7,6 +7,7 @@ use App\Http\Resources\DiagnosisResource;
 use App\Models\Diagnosis;
 use App\Models\Plant;
 use App\Services\DiagnosisService;
+use App\Services\StoreService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -105,7 +106,26 @@ class DiagnosisController extends Controller
                 $validated
             );
 
-            return $this->successResponse(new DiagnosisResource($diagnosis->load(['plant', 'disease'])), 'Diagnosis created', 201);
+            $diagnosis->load(['plant', 'disease']);
+
+            $nearbyStores = null;
+            if (!empty($validated['latitude']) && !empty($validated['longitude']) && $diagnosis->disease_id) {
+                $products = $diagnosis->disease->products;
+                if ($products->isNotEmpty()) {
+                    $storeService = app(StoreService::class);
+                    $nearbyStores = $storeService->findNearbyWithProducts(
+                        (float) $validated['latitude'],
+                        (float) $validated['longitude'],
+                        5000,
+                        $products->pluck('name')
+                    );
+                }
+            }
+
+            $resource = new DiagnosisResource($diagnosis);
+            $resource->nearby_stores = $nearbyStores;
+
+            return $this->successResponse($resource, 'Diagnosis created', 201);
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
@@ -148,7 +168,10 @@ class DiagnosisController extends Controller
         try {
             $diagnosis->load(['plant', 'disease', 'expert']);
 
-            return $this->successResponse(new DiagnosisResource($diagnosis));
+            $resource = new DiagnosisResource($diagnosis);
+            $resource->nearby_stores = null;
+
+            return $this->successResponse($resource);
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {

@@ -7,6 +7,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class DiagnosisResource extends JsonResource
 {
+    public ?array $nearby_stores = null;
+
     public function toArray(Request $request): array
     {
         return [
@@ -33,6 +35,7 @@ class DiagnosisResource extends JsonResource
             'expert_notes' => $this->expert_notes,
             'plant' => new PlantResource($this->whenLoaded('plant')),
             'expert' => new UserResource($this->whenLoaded('expert')),
+            'nearby_stores' => $this->nearby_stores,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];
