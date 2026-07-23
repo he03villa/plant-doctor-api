@@ -24,7 +24,7 @@ class UpdateStoreProductRequest extends FormRequest
             'unit' => 'nullable|string|max:50',
             'barcode' => 'nullable|string|max:100',
             'description' => 'nullable|string|max:1000',
-            'image_url' => 'nullable|url|max:2048',
+            'image' => 'nullable|file|image|max:5120',
             'is_visible_on_map' => 'nullable|boolean',
         ];
     }

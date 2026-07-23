@@ -23,6 +23,12 @@ use OpenApi\Attributes as OA;
 #[OA\Tag(name: 'Plants', description: 'User plant management')]
 #[OA\Tag(name: 'Diseases', description: 'Disease catalog')]
 #[OA\Tag(name: 'Diagnoses', description: 'Plant diagnoses and expert review')]
+#[OA\Tag(name: 'Stores', description: 'Nursery/greenhouse store management')]
+#[OA\Tag(name: 'Products', description: 'Store product inventory')]
+#[OA\Tag(name: 'Orders', description: 'Order management and invoice parsing')]
+#[OA\Tag(name: 'Plans', description: 'Subscription plans')]
+#[OA\Tag(name: 'Subscriptions', description: 'Store subscription management')]
+#[OA\Tag(name: 'Payments', description: 'Payment history')]
 class Spec
 {
 }

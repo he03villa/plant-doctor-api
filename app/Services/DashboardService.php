@@ -11,105 +11,170 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardService
 {
-    public function getDashboard(Store $store, int $lowStockThreshold = 5): array
+    public function getDashboard(Store $store, string $period = 'today', int $lowStockThreshold = 5): array
     {
+        $range = $this->getPeriodRange($period);
+        $prevRange = $this->getPreviousPeriodRange($period);
+
         return [
             'store' => [
                 'id' => $store->id,
                 'name' => $store->name,
             ],
-            'today' => $this->getTodayStats($store),
-            'week' => $this->getWeekStats($store),
-            'alerts' => $this->getAlerts($store, $lowStockThreshold),
-            'top_products' => $this->getTopProducts($store),
+            'period' => $period,
+            'summary' => $this->getSummary($store, $range, $prevRange, $lowStockThreshold),
+            'chart' => $this->getWeeklyChart($store),
+            'top_products' => $this->getTopProducts($store, $range),
+            'recent_invoices' => $this->getRecentInvoices($store),
         ];
     }
 
-    private function getTodayStats(Store $store): array
+    private function getPeriodRange(string $period): array
     {
-        $orders = Order::where('store_id', $store->id)
-            ->whereDate('created_at', Carbon::today())
-            ->first();
+        return match ($period) {
+            'today' => [Carbon::today(), Carbon::tomorrow()],
+            'week'  => [Carbon::now()->startOfWeek(), Carbon::now()->endOfWeek()->addDay()],
+            'month' => [Carbon::now()->startOfMonth(), Carbon::now()->endOfMonth()->addDay()],
+            'year'  => [Carbon::now()->startOfYear(), Carbon::now()->endOfYear()->addDay()],
+            default => [Carbon::today(), Carbon::tomorrow()],
+        };
+    }
 
+    private function getPreviousPeriodRange(string $period): array
+    {
+        return match ($period) {
+            'today' => [Carbon::yesterday(), Carbon::today()],
+            'week'  => [Carbon::now()->subWeek()->startOfWeek(), Carbon::now()->subWeek()->endOfWeek()->addDay()],
+            'month' => [Carbon::now()->subMonth()->startOfMonth(), Carbon::now()->subMonth()->endOfMonth()->addDay()],
+            'year'  => [Carbon::now()->subYear()->startOfYear(), Carbon::now()->subYear()->endOfYear()->addDay()],
+            default => [Carbon::yesterday(), Carbon::today()],
+        };
+    }
+
+    private function getSummary(Store $store, array $range, array $prevRange, int $lowStockThreshold): array
+    {
         $salesCount = Order::where('store_id', $store->id)
-            ->whereDate('created_at', Carbon::today())
+            ->whereBetween('created_at', $range)
             ->count();
 
         $salesTotal = Order::where('store_id', $store->id)
-            ->whereDate('created_at', Carbon::today())
+            ->whereBetween('created_at', $range)
             ->sum('total');
 
-        $itemsSold = OrderItem::whereHas('order', function ($query) use ($store) {
-            $query->where('store_id', $store->id)
-                ->whereDate('created_at', Carbon::today());
-        })->sum('quantity');
+        $prevSalesCount = Order::where('store_id', $store->id)
+            ->whereBetween('created_at', $prevRange)
+            ->count();
 
-        return [
-            'sales_count' => (int) $salesCount,
-            'sales_total' => (float) $salesTotal,
-            'items_sold' => (int) $itemsSold,
-        ];
-    }
+        $prevSalesTotal = Order::where('store_id', $store->id)
+            ->whereBetween('created_at', $prevRange)
+            ->sum('total');
 
-    private function getWeekStats(Store $store): array
-    {
-        $startOfWeek = Carbon::now()->startOfWeek();
-        $endOfWeek = Carbon::now()->endOfWeek();
-
-        $weekData = Order::where('store_id', $store->id)
-            ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
-            ->selectRaw('COALESCE(SUM(total), 0) as sales_total, COALESCE(AVG(total), 0) as avg_ticket')
-            ->first();
-
-        $topDay = Order::where('store_id', $store->id)
-            ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
-            ->selectRaw('DATE(created_at) as day, SUM(total) as day_total')
-            ->groupBy('day')
-            ->orderByDesc('day_total')
-            ->first();
-
-        return [
-            'sales_total' => (float) ($weekData->sales_total ?? 0),
-            'avg_ticket' => (float) round($weekData->avg_ticket ?? 0, 2),
-            'top_day' => $topDay?->day,
-        ];
-    }
-
-    private function getAlerts(Store $store, int $lowStockThreshold): array
-    {
         $lowStockCount = StoreProduct::where('store_id', $store->id)
             ->where('stock_quantity', '<=', $lowStockThreshold)
             ->where('is_active', true)
             ->count();
 
-        $pendingInvoices = Order::where('store_id', $store->id)
-            ->whereIn('status', ['pending', 'processed'])
-            ->count();
+        $salesTotalTrend = $this->calculateTrendPercent((float) $salesTotal, (float) $prevSalesTotal);
+        $salesCountTrend = $this->calculateTrendPercent((float) $salesCount, (float) $prevSalesCount);
 
         return [
-            'low_stock_count' => (int) $lowStockCount,
-            'pending_invoices' => (int) $pendingInvoices,
+            'sales_total' => (float) $salesTotal,
+            'sales_count' => (int) $salesCount,
+            'low_stock_alerts' => (int) $lowStockCount,
+            'sales_total_trend' => $salesTotalTrend['value'],
+            'sales_total_trend_dir' => $salesTotalTrend['direction'],
+            'sales_count_trend' => $salesCountTrend['value'],
+            'sales_count_trend_dir' => $salesCountTrend['direction'],
+            'low_stock_trend' => 0,
+            'low_stock_trend_dir' => 'same',
         ];
     }
 
-    private function getTopProducts(Store $store): array
+    private function calculateTrendPercent(float $current, float $previous): array
     {
-        return OrderItem::whereHas('order', function ($query) use ($store) {
-            $query->where('store_id', $store->id);
+        if ($previous == 0 && $current == 0) {
+            return ['value' => 0, 'direction' => 'same'];
+        }
+
+        if ($previous == 0) {
+            return ['value' => 100, 'direction' => 'up'];
+        }
+
+        $percent = (int) round((($current - $previous) / $previous) * 100);
+
+        if ($percent > 0) {
+            return ['value' => $percent, 'direction' => 'up'];
+        }
+
+        if ($percent < 0) {
+            return ['value' => abs($percent), 'direction' => 'down'];
+        }
+
+        return ['value' => 0, 'direction' => 'same'];
+    }
+
+    private function getWeeklyChart(Store $store): array
+    {
+        $startOfWeek = Carbon::now()->startOfWeek();
+        $endOfWeek = Carbon::now()->endOfWeek()->addDay();
+
+        $dailySales = Order::where('store_id', $store->id)
+            ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
+            ->selectRaw('TO_CHAR(created_at, \'Dy\') as day_name, SUM(total) as total')
+            ->groupBy('day_name')
+            ->get()
+            ->pluck('total', 'day_name')
+            ->toArray();
+
+        $labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+        $data = [];
+        foreach ($labels as $label) {
+            $data[] = (float) ($dailySales[$label] ?? 0);
+        }
+
+        return [
+            'labels' => $labels,
+            'data' => $data,
+        ];
+    }
+
+    private function getTopProducts(Store $store, array $range): array
+    {
+        return OrderItem::whereHas('order', function ($query) use ($store, $range) {
+            $query->where('store_id', $store->id)
+                ->whereBetween('orders.created_at', $range);
         })
             ->select(
                 'product_name',
-                DB::raw('SUM(quantity) as total_sold'),
-                DB::raw('SUM(total_price) as revenue')
+                DB::raw('SUM(quantity) as quantity_sold')
             )
             ->groupBy('product_name')
-            ->orderByDesc('total_sold')
+            ->orderByDesc('quantity_sold')
             ->limit(5)
             ->get()
-            ->map(fn($item) => [
+            ->map(fn($item, $index) => [
+                'rank' => $index + 1,
                 'name' => $item->product_name,
-                'total_sold' => (int) $item->total_sold,
-                'revenue' => (float) $item->revenue,
+                'quantity_sold' => (int) $item->quantity_sold,
+            ])
+            ->toArray();
+    }
+
+    private function getRecentInvoices(Store $store): array
+    {
+        return Order::where('store_id', $store->id)
+            ->whereNotNull('invoice_number')
+            ->latest('created_at')
+            ->limit(5)
+            ->get()
+            ->map(fn($order) => [
+                'id' => $order->id,
+                'invoice_number' => $order->invoice_number,
+                'supplier_name' => $order->supplier_name,
+                'total' => (float) $order->total,
+                'status' => $order->status,
+                'created_at' => $order->created_at->toISOString(),
             ])
             ->toArray();
     }

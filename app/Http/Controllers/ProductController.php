@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateStoreProductRequest;
 use App\Http\Resources\StoreProductResource;
 use App\Models\Store;
 use App\Models\StoreProduct;
+use App\Services\FileStorageService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,10 @@ use Exception;
 class ProductController extends Controller
 {
     use ApiResponseTrait;
+
+    public function __construct(
+        private FileStorageService $storage
+    ) {}
 
     /**
      * GET /api/stores/{store}/products
@@ -72,14 +77,14 @@ class ProductController extends Controller
             $query->visibleOnMap();
         }
 
-        $products = $query->latest()->paginate(15);
+        $products = $query->latest()->paginate($request->input('per_page', 15));
 
         return StoreProductResource::collection($products);
     }
 
     /**
      * POST /api/stores/{store}/products
-     * Create a new product
+     * Create a new product with optional image upload
      */
     #[OA\Post(
         path: '/api/stores/{store}/products',
@@ -91,7 +96,27 @@ class ProductController extends Controller
         ],
         requestBody: new OA\RequestBody(
             required: true,
-            content: new OA\JsonContent(ref: '#/components/schemas/CreateStoreProductRequest')
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(
+                    type: 'object',
+                    required: ['name', 'sale_price'],
+                    properties: [
+                        new OA\Property(property: 'name', type: 'string', example: 'Ficus benjamina'),
+                        new OA\Property(property: 'sale_price', type: 'number', example: 45000),
+                        new OA\Property(property: 'stock_quantity', type: 'integer', example: 10),
+                        new OA\Property(property: 'category', type: 'string', example: 'planta'),
+                        new OA\Property(property: 'sku', type: 'string', example: 'FIC-001'),
+                        new OA\Property(property: 'purchase_price', type: 'number', example: 25000),
+                        new OA\Property(property: 'min_stock', type: 'integer', example: 5),
+                        new OA\Property(property: 'unit', type: 'string', example: 'unidad'),
+                        new OA\Property(property: 'barcode', type: 'string', example: '123456789'),
+                        new OA\Property(property: 'description', type: 'string', example: 'Planta ornamental de interior'),
+                        new OA\Property(property: 'image', type: 'string', format: 'binary', description: 'Product image (max 5MB)'),
+                        new OA\Property(property: 'is_visible_on_map', type: 'boolean', example: true),
+                    ]
+                )
+            )
         ),
         responses: [
             new OA\Response(response: 201, description: 'Product created',
@@ -124,7 +149,14 @@ class ProductController extends Controller
                 return $this->notFoundResponse('Store not found');
             }
 
-            $product = $store->storeProducts()->create($request->validated());
+            $data = $request->validated();
+
+            if ($request->hasFile('image')) {
+                $data['image_url'] = $this->storage->store($request->file('image'), 'products');
+            }
+
+            unset($data['image']);
+            $product = $store->storeProducts()->create($data);
 
             return $this->successResponse(
                 new StoreProductResource($product),
@@ -184,7 +216,7 @@ class ProductController extends Controller
 
     /**
      * PUT /api/stores/{store}/products/{product}
-     * Update a product
+     * Update a product with optional image upload
      */
     #[OA\Put(
         path: '/api/stores/{store}/products/{product}',
@@ -197,7 +229,26 @@ class ProductController extends Controller
         ],
         requestBody: new OA\RequestBody(
             required: true,
-            content: new OA\JsonContent(ref: '#/components/schemas/UpdateStoreProductRequest')
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'name', type: 'string', example: 'Ficus benjamina'),
+                        new OA\Property(property: 'sale_price', type: 'number', example: 45000),
+                        new OA\Property(property: 'stock_quantity', type: 'integer', example: 10),
+                        new OA\Property(property: 'category', type: 'string', example: 'planta'),
+                        new OA\Property(property: 'sku', type: 'string', example: 'FIC-001'),
+                        new OA\Property(property: 'purchase_price', type: 'number', example: 25000),
+                        new OA\Property(property: 'min_stock', type: 'integer', example: 5),
+                        new OA\Property(property: 'unit', type: 'string', example: 'unidad'),
+                        new OA\Property(property: 'barcode', type: 'string', example: '123456789'),
+                        new OA\Property(property: 'description', type: 'string', example: 'Planta ornamental de interior'),
+                        new OA\Property(property: 'image', type: 'string', format: 'binary', description: 'New product image (max 5MB, replaces existing)'),
+                        new OA\Property(property: 'is_visible_on_map', type: 'boolean', example: true),
+                    ]
+                )
+            )
         ),
         responses: [
             new OA\Response(response: 200, description: 'Product updated',
@@ -227,7 +278,17 @@ class ProductController extends Controller
                 return $this->notFoundResponse('Product not found');
             }
 
-            $product->update($request->validated());
+            $data = $request->validated();
+
+            if ($request->hasFile('image')) {
+                if ($product->image_url && !str_starts_with($product->image_url, 'http')) {
+                    $this->storage->delete($product->image_url);
+                }
+                $data['image_url'] = $this->storage->store($request->file('image'), 'products');
+            }
+
+            unset($data['image']);
+            $product->update($data);
 
             return $this->successResponse(new StoreProductResource($product), 'Product updated');
         } catch (ValidationException $e) {
@@ -266,6 +327,10 @@ class ProductController extends Controller
 
             if (!$product) {
                 return $this->notFoundResponse('Product not found');
+            }
+
+            if ($product->image_url && !str_starts_with($product->image_url, 'http')) {
+                $this->storage->delete($product->image_url);
             }
 
             $product->delete();

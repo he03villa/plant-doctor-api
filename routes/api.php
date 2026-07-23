@@ -4,9 +4,13 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DiagnosisController;
 use App\Http\Controllers\DiseaseController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PlanController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\SaleController;
 use App\Http\Controllers\StoreController;
+use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\ViveroController;
 use Illuminate\Support\Facades\Route;
 
@@ -23,26 +27,59 @@ Route::group(['prefix' => 'auth'], function () {
     Route::put('/profile', [AuthController::class, 'updateProfile'])->middleware('auth:api');
 });
 
+// Public routes — Plans
+Route::get('plans', [PlanController::class, 'index']);
+Route::get('plans/{slug}', [PlanController::class, 'show']);
+
 Route::middleware('auth:api')->group(function () {
     Route::apiResource('plants', PlantController::class);
     Route::apiResource('diseases', DiseaseController::class)->only(['index', 'show']);
     Route::apiResource('diagnoses', DiagnosisController::class)->only(['index', 'store', 'show']);
     Route::post('/diagnoses/{diagnosis}/request-expert-review', [DiagnosisController::class, 'requestExpertReview']);
 
-    Route::post('/orders/parse', [OrderController::class, 'parse']);
+    // Orders — premium only for parse (AI invoicing)
+    Route::middleware('premium')->group(function () {
+        Route::post('/orders/parse', [OrderController::class, 'parse']);
+    });
     Route::apiResource('orders', OrderController::class);
     Route::post('/orders/{order}/verify', [OrderController::class, 'verify']);
 
-    Route::get('/vivero/dashboard', [ViveroController::class, 'dashboard']);
+    // Dashboard — advanced analytics requires Pro+
+    Route::middleware('feature:has_advanced_dashboard')->group(function () {
+        Route::get('/vivero/dashboard', [ViveroController::class, 'dashboard']);
+    });
 
     Route::get('/stores/nearby', [StoreController::class, 'nearby']);
 
+    // Subscriptions
+    Route::get('subscriptions/current', [SubscriptionController::class, 'current']);
+    Route::post('subscriptions', [SubscriptionController::class, 'store']);
+    Route::patch('subscriptions/{id}', [SubscriptionController::class, 'update']);
+    Route::delete('subscriptions/{id}', [SubscriptionController::class, 'cancel']);
+
+    // Payments
+    Route::get('payments', [PaymentController::class, 'index']);
+    Route::get('payments/recent', [PaymentController::class, 'recent']);
+
     Route::middleware('store.owner')->group(function () {
-        Route::apiResource('stores', StoreController::class);
+        // Stores — limit check on creation (1 for Free/Pro, unlimited for Business)
+        Route::apiResource('stores', StoreController::class)->except(['store']);
+        Route::post('stores', [StoreController::class, 'store'])
+            ->middleware('check.store.limit');
+
         Route::put('/stores/{store}/onboarding', [StoreController::class, 'onboarding']);
         Route::put('/stores/{store}/toggle-map', [StoreController::class, 'toggleMap']);
 
-        Route::apiResource('stores/{store}/products', ProductController::class);
+        // Products — all methods except 'store' (no limit check)
+        Route::apiResource('stores/{store}/products', ProductController::class)
+            ->except(['store']);
         Route::patch('/stores/{store}/products/{product}/visibility', [ProductController::class, 'toggleVisibility']);
+
+        // Product creation — with limit check
+        Route::post('stores/{store}/products', [ProductController::class, 'store'])
+            ->middleware('check.product.limit');
+
+        // Sales — POS transactions per store
+        Route::apiResource('stores/{store}/sales', SaleController::class)->only(['index', 'store', 'show', 'destroy']);
     });
 });

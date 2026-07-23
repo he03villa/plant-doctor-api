@@ -53,6 +53,26 @@ class Store extends Model
         return $this->hasMany(Order::class);
     }
 
+    public function subscription(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(Subscription::class)->latest();
+    }
+
+    public function getCurrentPlanAttribute(): ?Plan
+    {
+        return $this->subscription?->plan;
+    }
+
+    public function getSubscriptionStatusAttribute(): ?string
+    {
+        return $this->subscription?->status;
+    }
+
+    public function isPremium(): bool
+    {
+        return $this->is_premium && $this->subscription?->status === 'active';
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);

@@ -12,7 +12,7 @@ class FileStorageService
 
     public function __construct()
     {
-        $this->disk = config('filesystems.default', 'public');
+        $this->disk = 'public';
     }
 
     public function store(UploadedFile $file, string $folder = ''): string

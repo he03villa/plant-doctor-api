@@ -41,6 +41,17 @@ class StoreProduct extends Model
         return $this->belongsTo(Store::class);
     }
 
+    public function getImageUrlAttribute(): ?string
+    {
+        $path = $this->attributes['image_url'] ?? null;
+
+        if (!$path) {
+            return null;
+        }
+
+        return app(\App\Services\FileStorageService::class)->getUrl($path);
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
