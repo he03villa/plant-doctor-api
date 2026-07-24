@@ -18,6 +18,7 @@ class StoreOrderPaymentRequest extends FormRequest
             'payment_method' => 'required|in:cash,card,transfer',
             'payment_date' => 'required|date|before_or_equal:today',
             'notes' => 'nullable|string|max:500',
+            'receipt_image' => 'nullable|file|mimes:jpeg,png,jpg,gif,webp,pdf|max:10240',
         ];
     }
 }

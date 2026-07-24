@@ -15,7 +15,7 @@ class GroqService
     {
         $this->apiKey = config('services.groq.api_key') ?? '';
         $this->baseUrl = config('services.groq.url') ?? 'https://api.groq.com/openai/v1';
-        $this->model = config('services.groq.model') ?? 'meta-llama/llama-4-scout-17b-16e-instruct';
+        $this->model = config('services.groq.model') ?? 'llama-3.3-70b-versatile';
     }
 
     public function isConfigured(): bool

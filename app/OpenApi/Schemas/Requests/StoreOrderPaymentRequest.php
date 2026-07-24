@@ -13,6 +13,7 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'payment_method', type: 'string', enum: ['cash', 'card', 'transfer'], example: 'cash'),
         new OA\Property(property: 'payment_date', type: 'string', format: 'date', example: '2026-07-23'),
         new OA\Property(property: 'notes', type: 'string', nullable: true, example: 'Primer abono'),
+        new OA\Property(property: 'receipt_image', type: 'string', format: 'binary', nullable: true, description: 'Imagen del comprobante (jpeg, png, jpg, gif, webp, pdf — max 10MB)'),
     ]
 )]
 class StoreOrderPaymentRequest

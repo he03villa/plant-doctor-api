@@ -237,6 +237,12 @@ PROMPT;
             }
         }
 
+        Log::warning('Groq parse response not successful', [
+            'status' => $response->status(),
+            'body' => $response->json(),
+            'model' => $model,
+        ]);
+
         return null;
     }
 

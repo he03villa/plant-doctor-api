@@ -17,6 +17,7 @@ class OrderPayment extends Model
         'payment_method',
         'payment_date',
         'notes',
+        'receipt_image_url',
     ];
 
     protected $casts = [

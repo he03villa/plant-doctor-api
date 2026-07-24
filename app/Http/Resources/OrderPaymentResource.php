@@ -15,6 +15,7 @@ class OrderPaymentResource extends JsonResource
             'payment_method' => $this->payment_method,
             'payment_date' => $this->payment_date?->toDateString(),
             'notes' => $this->notes,
+            'receipt_image_url' => $this->receipt_image_url,
             'user' => $this->whenLoaded('user', fn () => [
                 'id' => $this->user->id,
                 'name' => $this->user->name,

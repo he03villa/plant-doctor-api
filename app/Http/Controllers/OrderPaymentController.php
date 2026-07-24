@@ -6,6 +6,8 @@ use App\Http\Requests\StoreOrderPaymentRequest;
 use App\Http\Resources\OrderPaymentResource;
 use App\Models\Order;
 use App\Models\OrderPayment;
+use App\Services\CloudinaryService;
+use App\Services\FileStorageService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +18,11 @@ use Exception;
 class OrderPaymentController extends Controller
 {
     use ApiResponseTrait;
+
+    public function __construct(
+        private CloudinaryService $cloudinary,
+        private FileStorageService $storage
+    ) {}
 
     /**
      * GET /api/orders/{order}/payments
@@ -75,7 +82,10 @@ class OrderPaymentController extends Controller
         ],
         requestBody: new OA\RequestBody(
             required: true,
-            content: new OA\JsonContent(ref: '#/components/schemas/StoreOrderPaymentRequest')
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(ref: '#/components/schemas/StoreOrderPaymentRequest')
+            )
         ),
         responses: [
             new OA\Response(response: 201, description: 'Payment registered',
@@ -119,7 +129,19 @@ class OrderPaymentController extends Controller
                 'payment_method' => $request->payment_method,
                 'payment_date' => $request->payment_date,
                 'notes' => $request->notes,
+                'receipt_image_url' => null,
             ]);
+
+            if ($request->hasFile('receipt_image')) {
+                $file = $request->file('receipt_image');
+                if ($this->cloudinary->isConfigured()) {
+                    $imageUrl = $this->cloudinary->upload($file, 'payment-receipts');
+                } else {
+                    $path = $this->storage->store($file, 'payment-receipts');
+                    $imageUrl = $this->storage->getUrl($path);
+                }
+                $payment->update(['receipt_image_url' => $imageUrl]);
+            }
 
             $payment->load('user');
 
