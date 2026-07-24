@@ -29,6 +29,7 @@ use OpenApi\Attributes as OA;
 #[OA\Tag(name: 'Plans', description: 'Subscription plans')]
 #[OA\Tag(name: 'Subscriptions', description: 'Store subscription management')]
 #[OA\Tag(name: 'Payments', description: 'Payment history')]
+#[OA\Tag(name: 'OrderPayments', description: 'Per-order payment tracking')]
 #[OA\Tag(name: 'Sales', description: 'POS sales transactions per store')]
 #[OA\Tag(name: 'Vivero', description: 'Store owner dashboard and analytics')]
 class Spec

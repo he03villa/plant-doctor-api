@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DiagnosisController;
 use App\Http\Controllers\DiseaseController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\OrderPaymentController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\PlantController;
@@ -43,6 +44,7 @@ Route::middleware('auth:api')->group(function () {
     });
     Route::apiResource('orders', OrderController::class);
     Route::post('/orders/{order}/verify', [OrderController::class, 'verify']);
+    Route::apiResource('orders/{order}/payments', OrderPaymentController::class)->only(['index', 'store', 'destroy']);
 
     // Dashboard — advanced analytics requires Pro+
     Route::middleware('feature:has_advanced_dashboard')->group(function () {
