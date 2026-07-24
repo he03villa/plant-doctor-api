@@ -15,7 +15,7 @@ class ParseInvoiceRequest extends FormRequest
     {
         return [
             'ocr_text' => 'required|string|min:10',
-            'image' => 'nullable|image|max:10240',
+            'image' => 'nullable|file|mimes:jpeg,png,jpg,gif,webp,pdf|max:10240',
         ];
     }
 }

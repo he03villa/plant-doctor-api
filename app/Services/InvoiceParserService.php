@@ -155,35 +155,57 @@ class InvoiceParserService
     private function buildParsePrompt(string $rawText): string
     {
         return <<<PROMPT
-Eres un experto en facturación colombiana y latinoamericana. Extrae los datos estructurados de esta factura.
+Eres un experto en facturación colombiana. Extrae datos estructurados de esta factura o recibo.
 
-Texto OCR de la factura:
+Texto OCR:
 ---
 {$rawText}
 ---
 
-Responde ÚNICAMENTE con un JSON válido con esta estructura:
+TIPOS DE DOCUMENTO SOPORTADOS:
+1. **Facturas comerciales** (productos, cantidades, precios unitarios)
+2. **Recibos de servicios públicos** (energía, agua, aseo, gas) — NO tienen productos individuales
+
+REGLAS PARA RECIBOS DE SERVICIOS PÚBLICOS:
+- El proveedor suele aparecer después de "EMPRESA:" o es el nombre de la empresa en mayúsculas (ej: "ASEO TECNICO DE LA SABANA S.A.S.", "Air-e SAS ESP", "EPM", "EMCALI")
+- El TOTAL REAL es el que aparece como "$165.440" o "TOTAL MES: $42.022". NO confundir con totales de secciones de desglose de tarifas (ej: "TOTAL: 60030.98" de la tabla de componentes tarifarios)
+- Las fechas suelen estar en formato DD/MM/YYYY o DD/MM/YYYY HH:MM:SS
+- El número de factura puede ser un número largo como "67190726" o "1029643"
+- Para servicios públicos, crea UN SOLO ítem descriptivo con el concepto del servicio
+
+FORMATO DE NÚMEROS COLOMBIANOS:
+- "$165.440" = 165440 (punto es separador de miles)
+- "$1.234.567" = 1234567
+- "42.022" = 42022
+- Si hay coma: "$165,440" = 165440 (también separador de miles en algunos contextos)
+
+Responde ÚNICAMENTE con JSON válido:
 {
   "invoice_number": "número de factura o null",
   "invoice_date": "YYYY-MM-DD o null",
-  "supplier_name": "nombre del proveedor o null",
+  "supplier_name": "nombre exacto de la empresa proveedora",
   "items": [
     {
-      "product_name": "nombre del producto",
-      "quantity": cantidad_numerica,
-      "unit_price": precio_unitario_numerico,
-      "total_price": total_item_numerico
+      "product_name": "nombre del servicio o producto",
+      "quantity": 1,
+      "unit_price": monto_total_numerico,
+      "total_price": monto_total_numerico
     }
   ],
   "subtotal": numerico,
   "tax": numerico,
-  "total": numerico,
-  "currency": "COP o USD o EUR"
+  "total": numerico_total_a_pagar,
+  "currency": "COP"
 }
 
+Para servicios públicos sin items individuales, usa:
+- product_name: "Servicio de [tipo] - [período]" (ej: "Servicio de energía - Junio 2026")
+- quantity: 1
+- unit_price y total_price: el monto total del recibo
+- subtotal: subtotal si aparece, si no = total
+- tax: impuestos si aparecen, si no = 0
+
 Si un campo no se puede determinar, usa null para strings y 0 para números.
-Para la fecha, usa formato YYYY-MM-DD.
-Sé preciso con los números: elimina puntos de miles y usa decimal con punto.
 PROMPT;
     }
 
@@ -290,7 +312,6 @@ PROMPT;
     private function hasValidItems(array $result): bool
     {
         return count($result['items']) > 0
-            || $result['total'] > 0
-            || !empty($result['invoice_number']);
+            || (!empty($result['supplier_name']) && $result['total'] > 0);
     }
 }
