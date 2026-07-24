@@ -120,10 +120,10 @@ class DashboardService
 
         $dailySales = Order::where('store_id', $store->id)
             ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
-            ->selectRaw('TO_CHAR(created_at, \'Dy\') as day_name, SUM(total) as total')
-            ->groupBy('day_name')
+            ->selectRaw('EXTRACT(ISODOW FROM created_at) as day_num, SUM(total) as total')
+            ->groupBy('day_num')
             ->get()
-            ->pluck('total', 'day_name')
+            ->mapWithKeys(fn($row) => [$this->dayNumToLabel((int)$row->day_num) => (float) $row->total])
             ->toArray();
 
         $labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -177,5 +177,19 @@ class DashboardService
                 'created_at' => $order->created_at->toISOString(),
             ])
             ->toArray();
+    }
+
+    private function dayNumToLabel(int $dayNum): string
+    {
+        return match ($dayNum) {
+            1 => 'Mon',
+            2 => 'Tue',
+            3 => 'Wed',
+            4 => 'Thu',
+            5 => 'Fri',
+            6 => 'Sat',
+            7 => 'Sun',
+            default => '',
+        };
     }
 }

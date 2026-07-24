@@ -19,15 +19,15 @@ class SaleResource extends JsonResource
             'payment_method' => $this->payment_method,
             'status' => $this->status,
             'notes' => $this->notes,
-            'store' => [
+            'store' => $this->whenLoaded('store', fn () => [
                 'id' => $this->store->id,
                 'name' => $this->store->name,
-            ],
-            'user' => [
+            ]),
+            'user' => $this->whenLoaded('user', fn () => [
                 'id' => $this->user->id,
                 'name' => $this->user->name,
-            ],
-            'items' => $this->items->map(fn ($item) => [
+            ]),
+            'items' => $this->whenLoaded('items', fn () => $this->items->map(fn ($item) => [
                 'id' => $item->id,
                 'product_name' => $item->product_name,
                 'quantity' => $item->quantity,
@@ -38,7 +38,7 @@ class SaleResource extends JsonResource
                     'name' => $item->product->name,
                     'sale_price' => (float) $item->product->sale_price,
                 ] : null,
-            ]),
+            ])),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

@@ -6,9 +6,9 @@ use App\Http\Requests\StoreSubscriptionRequest;
 use App\Http\Resources\SubscriptionResource;
 use App\Models\Payment;
 use App\Models\Plan;
-use App\Models\Store;
 use App\Models\Subscription;
 use App\Traits\ApiResponseTrait;
+use App\Traits\StoreScoped;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,7 +19,7 @@ use Exception;
 
 class SubscriptionController extends Controller
 {
-    use ApiResponseTrait;
+    use ApiResponseTrait, StoreScoped;
 
     #[OA\Get(
         path: '/api/subscriptions/current',
@@ -97,12 +97,11 @@ class SubscriptionController extends Controller
             $billingCycle = $validated['billing_cycle'] ?? 'monthly';
             $isYearly = $billingCycle === 'yearly';
 
-            $result = DB::transaction(function () use ($store, $plan, $isYearly, $user) {
-                // Cancel current active subscription if exists
-                $currentSubscription = $store->subscription()
-                    ->whereIn('status', ['active', 'trialing'])
-                    ->first();
+            $currentSubscription = $store->subscription()
+                ->whereIn('status', ['active', 'trialing'])
+                ->first();
 
+            $result = DB::transaction(function () use ($store, $plan, $isYearly, $currentSubscription) {
                 if ($currentSubscription) {
                     $currentSubscription->update([
                         'status' => 'cancelled',
@@ -110,7 +109,6 @@ class SubscriptionController extends Controller
                     ]);
                 }
 
-                // Create new subscription
                 $periodStart = now();
                 $periodEnd = $isYearly ? now()->addYear() : now()->addMonth();
 
@@ -125,7 +123,6 @@ class SubscriptionController extends Controller
                     'last_payment_amount' => $isYearly ? $plan->price_yearly : $plan->price_monthly,
                 ]);
 
-                // Create payment record
                 Payment::create([
                     'subscription_id' => $subscription->id,
                     'store_id' => $store->id,
@@ -136,7 +133,6 @@ class SubscriptionController extends Controller
                     'transaction_id' => 'manual_' . uniqid(),
                 ]);
 
-                // Update store premium flag
                 $store->update([
                     'is_premium' => $plan->slug !== 'free',
                 ]);
@@ -180,6 +176,12 @@ class SubscriptionController extends Controller
                 )
             ),
             new OA\Response(response: 404, description: 'Subscription not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
                 content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
             ),
         ]
@@ -308,16 +310,5 @@ class SubscriptionController extends Controller
         } catch (Exception $e) {
             return $this->errorResponse('Error cancelling subscription: ' . $e->getMessage(), 500);
         }
-    }
-
-    private function getStoreForUser($user): Store
-    {
-        $store = $user->store;
-
-        if (!$store) {
-            throw new Exception('No store found for this user. Create a store first.');
-        }
-
-        return $store;
     }
 }

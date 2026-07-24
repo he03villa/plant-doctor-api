@@ -9,9 +9,9 @@ use App\Models\Order;
 use App\Models\Store;
 use App\Services\OrderService;
 use App\Traits\ApiResponseTrait;
+use App\Traits\StoreScoped;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
@@ -19,7 +19,7 @@ use Exception;
 
 class OrderController extends Controller
 {
-    use ApiResponseTrait;
+    use ApiResponseTrait, StoreScoped;
 
     public function __construct(
         private OrderService $orderService
@@ -188,12 +188,16 @@ class OrderController extends Controller
             ),
         ]
     )]
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): JsonResponse
     {
-        $storeId = $request->query('store_id');
-        $orders = $this->orderService->getUserOrders($request->user(), $storeId);
+        try {
+            $storeId = $request->query('store_id');
+            $orders = $this->orderService->getUserOrders($request->user(), $storeId);
 
-        return OrderResource::collection($orders);
+            return $this->successResponse(OrderResource::collection($orders));
+        } catch (Exception $e) {
+            return $this->errorResponse('Error listing orders: ' . $e->getMessage(), 500);
+        }
     }
 
     /**
@@ -374,16 +378,5 @@ class OrderController extends Controller
         } catch (Exception $e) {
             return $this->errorResponse('Error verifying order: ' . $e->getMessage(), 500);
         }
-    }
-
-    private function getStoreForUser($user): Store
-    {
-        $store = Store::where('user_id', $user->id)->first();
-
-        if (!$store) {
-            throw new Exception('No store found for this user. Create a store first.');
-        }
-
-        return $store;
     }
 }

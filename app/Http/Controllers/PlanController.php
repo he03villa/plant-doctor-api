@@ -6,7 +6,6 @@ use App\Http\Resources\PlanResource;
 use App\Models\Plan;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use OpenApi\Attributes as OA;
 use Exception;
 
@@ -31,11 +30,15 @@ class PlanController extends Controller
             ),
         ]
     )]
-    public function index(): AnonymousResourceCollection
+    public function index(): JsonResponse
     {
-        $plans = Plan::where('is_active', true)->orderBy('display_order')->get();
+        try {
+            $plans = Plan::where('is_active', true)->orderBy('display_order')->get();
 
-        return PlanResource::collection($plans);
+            return $this->successResponse(PlanResource::collection($plans));
+        } catch (Exception $e) {
+            return $this->errorResponse('Error listing plans: ' . $e->getMessage(), 500);
+        }
     }
 
     #[OA\Get(

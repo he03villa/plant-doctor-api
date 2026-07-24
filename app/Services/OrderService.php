@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class OrderService
@@ -47,6 +48,7 @@ class OrderService
             'ocr_raw_text' => $data['ocr_raw_text'] ?? null,
             'ocr_confidence' => $data['ocr_confidence'] ?? null,
             'status' => 'pending',
+            'type' => $data['type'] ?? 'proveedor',
             'notes' => $data['notes'] ?? null,
         ]);
 
@@ -95,6 +97,7 @@ class OrderService
             'tax' => $data['tax'] ?? $order->tax,
             'total' => $data['total'] ?? $order->total,
             'currency' => $data['currency'] ?? $order->currency,
+            'type' => $data['type'] ?? $order->type,
             'notes' => $data['notes'] ?? $order->notes,
         ]);
 
@@ -128,7 +131,18 @@ class OrderService
 
     public function verify(Order $order): Order
     {
-        $order->update(['status' => 'verified']);
-        return $order;
+        DB::transaction(function () use ($order) {
+            $order->update(['status' => 'verified']);
+
+            if ($order->type === 'proveedor') {
+                foreach ($order->items as $item) {
+                    if ($item->matched_product_id) {
+                        $item->matchedProduct()->increment('stock_quantity', $item->quantity);
+                    }
+                }
+            }
+        });
+
+        return $order->fresh(['items.matchedProduct']);
     }
 }

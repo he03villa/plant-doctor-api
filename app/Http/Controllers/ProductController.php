@@ -69,6 +69,14 @@ class ProductController extends Controller
 
         $query = $store->storeProducts();
 
+        if ($request->query('search')) {
+            $search = $request->query('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('sku', 'like', "%{$search}%");
+            });
+        }
+
         if ($request->query('category')) {
             $query->where('category', $request->query('category'));
         }

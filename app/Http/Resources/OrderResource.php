@@ -20,6 +20,7 @@ class OrderResource extends JsonResource
             'currency' => $this->currency,
             'invoice_image_url' => $this->invoice_image_url,
             'status' => $this->status,
+            'type' => $this->type ?? 'proveedor',
             'notes' => $this->notes,
             'ocr_confidence' => $this->ocr_confidence ? (float) $this->ocr_confidence : null,
             'store' => [

@@ -3,17 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Models\Payment;
-use App\Models\Store;
 use App\Traits\ApiResponseTrait;
+use App\Traits\StoreScoped;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use OpenApi\Attributes as OA;
 use Exception;
 
 class PaymentController extends Controller
 {
-    use ApiResponseTrait;
+    use ApiResponseTrait, StoreScoped;
 
     #[OA\Get(
         path: '/api/payments',
@@ -88,16 +87,5 @@ class PaymentController extends Controller
         } catch (Exception $e) {
             return $this->errorResponse('Error listing recent payments: ' . $e->getMessage(), 500);
         }
-    }
-
-    private function getStoreForUser($user): Store
-    {
-        $store = $user->store;
-
-        if (!$store) {
-            throw new Exception('No store found for this user.');
-        }
-
-        return $store;
     }
 }

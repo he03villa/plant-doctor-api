@@ -39,7 +39,7 @@ class EnsureFeature
             return $this->denied($feature);
         }
 
-        $value = $subscription->plan->features[$feature] ?? false;
+        $value = $subscription?->plan?->features[$feature] ?? false;
 
         if (!$value) {
             return $this->denied($feature);

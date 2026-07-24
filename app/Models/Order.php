@@ -25,6 +25,7 @@ class Order extends Model
         'ocr_raw_text',
         'ocr_confidence',
         'status',
+        'type',
         'notes',
     ];
 

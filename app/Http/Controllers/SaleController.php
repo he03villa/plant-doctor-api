@@ -10,9 +10,9 @@ use App\Models\StoreProduct;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Str;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
 use Exception;
@@ -33,17 +33,38 @@ class SaleController extends Controller
             new OA\Parameter(name: 'store', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Sales listed'),
+            new OA\Response(response: 200, description: 'Sales listed',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Success'),
+                        new OA\Property(property: 'data', type: 'object', properties: [
+                            new OA\Property(property: 'data', type: 'array', items: new OA\Items(ref: '#/components/schemas/Sale')),
+                            new OA\Property(property: 'current_page', type: 'integer', example: 1),
+                            new OA\Property(property: 'per_page', type: 'integer', example: 15),
+                            new OA\Property(property: 'total', type: 'integer', example: 10),
+                        ]),
+                    ]
+                )
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
-    public function index(Request $request, int $store): AnonymousResourceCollection
+    public function index(Request $request, int $store): JsonResponse
     {
-        $sales = Sale::forStore($store)
-            ->with('items')
-            ->latest()
-            ->paginate(15);
+        try {
+            $sales = Sale::forStore($store)
+                ->with('items')
+                ->latest()
+                ->paginate(15);
 
-        return SaleResource::collection($sales);
+            return $this->successResponse(SaleResource::collection($sales));
+        } catch (Exception $e) {
+            return $this->errorResponse('Error listing sales: ' . $e->getMessage(), 500);
+        }
     }
 
     /**
@@ -59,7 +80,22 @@ class SaleController extends Controller
             content: new OA\JsonContent(ref: '#/components/schemas/StoreSaleRequest')
         ),
         responses: [
-            new OA\Response(response: 201, description: 'Sale created'),
+            new OA\Response(response: 201, description: 'Sale created',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Venta registrada exitosamente'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/Sale'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function store(StoreSaleRequest $request, int $store): JsonResponse
@@ -100,7 +136,7 @@ class SaleController extends Controller
                 $sale = Sale::create([
                     'store_id' => $store,
                     'user_id' => Auth::id(),
-                    'invoice_number' => 'V-' . str_pad(Sale::max('id') + 1, 6, '0', STR_PAD_LEFT),
+                    'invoice_number' => 'V-' . strtoupper(Str::random(6)),
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'total' => $total,
@@ -137,19 +173,42 @@ class SaleController extends Controller
         summary: 'Get sale details',
         tags: ['Sales'],
         security: [['jwt' => []]],
+        parameters: [
+            new OA\Parameter(name: 'store', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'sale', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
         responses: [
-            new OA\Response(response: 200, description: 'Sale retrieved'),
+            new OA\Response(response: 200, description: 'Sale retrieved',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Success'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/Sale'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Sale not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function show(int $store, int $id): JsonResponse
     {
-        $sale = Sale::forStore($store)->with('items', 'store', 'user')->find($id);
+        try {
+            $sale = Sale::forStore($store)->with('items', 'store', 'user')->find($id);
 
-        if (!$sale) {
-            return $this->notFoundResponse('Venta no encontrada');
+            if (!$sale) {
+                return $this->notFoundResponse('Venta no encontrada');
+            }
+
+            return $this->successResponse(new SaleResource($sale));
+        } catch (Exception $e) {
+            return $this->errorResponse('Error getting sale: ' . $e->getMessage(), 500);
         }
-
-        return $this->successResponse(new SaleResource($sale));
     }
 
     /**
@@ -160,8 +219,20 @@ class SaleController extends Controller
         summary: 'Cancel a sale and restore stock',
         tags: ['Sales'],
         security: [['jwt' => []]],
+        parameters: [
+            new OA\Parameter(name: 'store', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'sale', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
         responses: [
-            new OA\Response(response: 200, description: 'Sale cancelled'),
+            new OA\Response(response: 200, description: 'Sale cancelled',
+                content: new OA\JsonContent(ref: '#/components/schemas/SuccessResponse')
+            ),
+            new OA\Response(response: 404, description: 'Sale not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
         ]
     )]
     public function destroy(int $store, int $id): JsonResponse

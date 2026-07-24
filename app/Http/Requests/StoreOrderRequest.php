@@ -25,6 +25,7 @@ class StoreOrderRequest extends FormRequest
             'ocr_raw_text' => 'nullable|string',
             'ocr_confidence' => 'nullable|numeric|between:0,1',
             'status' => 'nullable|in:pending,processed,verified,error',
+            'type' => 'nullable|string|in:proveedor,servicio,otro',
             'notes' => 'nullable|string|max:1000',
             'items' => 'nullable|array|min:1',
             'items.*.product_name' => 'required|string|max:255',

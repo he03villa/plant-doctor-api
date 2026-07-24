@@ -55,7 +55,7 @@ class Subscription extends Model
 
     public function getIsExpiredAttribute(): bool
     {
-        return $this->status === 'expired' || $this->current_period_end->isPast();
+        return $this->status === 'expired' || $this->current_period_end?->isPast();
     }
 
     public function getDaysUntilRenewalAttribute(): int

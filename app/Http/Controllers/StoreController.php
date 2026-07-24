@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\CreateStoreRequest;
+use App\Http\Requests\NearbyStoresRequest;
 use App\Http\Requests\UpdateStoreRequest;
 use App\Http\Resources\StoreResource;
 use App\Models\Store;
@@ -425,23 +426,16 @@ class StoreController extends Controller
             ),
         ]
     )]
-    public function nearby(Request $request): JsonResponse
+    public function nearby(NearbyStoresRequest $request): JsonResponse
     {
         try {
-            $request->validate([
-                'latitude' => 'required|numeric|between:-90,90',
-                'longitude' => 'required|numeric|between:-180,180',
-                'radius' => 'nullable|integer|min:100|max:50000',
-                'products' => 'nullable|string',
-            ]);
-
-            $lat = (float) $request->query('latitude');
-            $lng = (float) $request->query('longitude');
-            $radius = (int) $request->query('radius', 5000);
+            $lat = (float) $request->validated('latitude');
+            $lng = (float) $request->validated('longitude');
+            $radius = (int) ($request->validated('radius') ?? 5000);
 
             $productNames = null;
-            if ($request->query('products')) {
-                $productNames = collect(explode(',', $request->query('products')))
+            if ($request->validated('products')) {
+                $productNames = collect(explode(',', $request->validated('products')))
                     ->map(fn(string $p) => trim($p))
                     ->filter();
             }

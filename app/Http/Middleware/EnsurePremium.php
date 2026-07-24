@@ -35,7 +35,7 @@ class EnsurePremium
 
         $subscription = $store->subscription;
 
-        if (!$subscription || $subscription->plan->slug === 'free' || $subscription->is_expired) {
+        if (!$subscription || $subscription?->plan?->slug === 'free' || $subscription->is_expired) {
             return response()->json([
                 'success' => false,
                 'message' => 'Esta función requiere un plan premium.',
