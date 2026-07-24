@@ -57,7 +57,7 @@ class SaleController extends Controller
     {
         try {
             $sales = Sale::forStore($store)
-                ->with('items')
+                ->with('items', 'user', 'store')
                 ->latest()
                 ->paginate(15);
 
