@@ -64,14 +64,14 @@ class OrderService
             }
         }
 
-        $order->load('items');
+        $order->load(['items.matchedProduct', 'payments']);
 
         return $order;
     }
 
     public function getUserOrders(User $user, ?int $storeId = null)
     {
-        $query = Order::where('user_id', $user->id)->with('items');
+        $query = Order::where('user_id', $user->id)->with(['items', 'payments']);
 
         if ($storeId) {
             $query->where('store_id', $storeId);
@@ -83,7 +83,7 @@ class OrderService
     public function getOrder(User $user, int $orderId): ?Order
     {
         return Order::where('user_id', $user->id)
-            ->with('items')
+            ->with(['items.matchedProduct', 'payments.user'])
             ->find($orderId);
     }
 
@@ -115,7 +115,7 @@ class OrderService
             }
         }
 
-        $order->load('items');
+        $order->load(['items.matchedProduct', 'payments']);
 
         return $order;
     }
