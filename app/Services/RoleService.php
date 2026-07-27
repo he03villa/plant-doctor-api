@@ -27,7 +27,11 @@ class RoleService
         ]);
 
         if (! empty($data['permissions'])) {
-            $role->syncPermissions($data['permissions']);
+            $permissions = array_map(
+                fn ($name) => Permission::firstOrCreate(['name' => $name, 'guard_name' => 'api']),
+                $data['permissions']
+            );
+            $role->syncPermissions($permissions);
         }
 
         return $role->load('permissions');
@@ -47,7 +51,11 @@ class RoleService
         }
 
         if (array_key_exists('permissions', $data)) {
-            $role->syncPermissions($data['permissions'] ?? []);
+            $permissions = array_map(
+                fn ($name) => Permission::firstOrCreate(['name' => $name, 'guard_name' => 'api']),
+                $data['permissions'] ?? []
+            );
+            $role->syncPermissions($permissions);
         }
 
         return $role->load('permissions');
