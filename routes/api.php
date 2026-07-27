@@ -29,6 +29,7 @@ Route::group(['prefix' => 'auth'], function () {
     Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:api');
     Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me'])->middleware('auth:api');
+    Route::get('/me/roles-and-permissions', [AuthController::class, 'meRolesAndPermissions'])->middleware('auth:api');
     Route::put('/profile', [AuthController::class, 'updateProfile'])->middleware('auth:api');
 });
 

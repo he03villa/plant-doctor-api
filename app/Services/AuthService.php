@@ -30,7 +30,7 @@ class AuthService
 
     public function login(array $credentials): ?array
     {
-        if (!$token = JWTAuth::attempt($credentials)) {
+        if (! $token = JWTAuth::attempt($credentials)) {
             return null;
         }
 
@@ -61,10 +61,16 @@ class AuthService
         return Auth::user()->load('roles');
     }
 
+    public function meRolesAndPermissions(): User
+    {
+        return Auth::user()->load(['roles', 'permissions']);
+    }
+
     public function updateProfile(array $data): User
     {
         $user = Auth::user();
         $user->update($data);
+
         return $user->load('roles');
     }
 }

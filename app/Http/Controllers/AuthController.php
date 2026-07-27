@@ -8,12 +8,13 @@ use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Resources\AuthResource;
 use App\Http\Resources\TokenResource;
 use App\Http\Resources\UserResource;
+use App\Http\Resources\UserRolesPermissionsResource;
 use App\Services\AuthService;
 use App\Traits\ApiResponseTrait;
+use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
-use Exception;
 
 class AuthController extends Controller
 {
@@ -67,7 +68,7 @@ class AuthController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error registering user: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error registering user: '.$e->getMessage(), 500);
         }
     }
 
@@ -110,7 +111,7 @@ class AuthController extends Controller
         try {
             $result = $this->authService->login($request->validated());
 
-            if (!$result) {
+            if (! $result) {
                 return $this->unauthorizedResponse('Invalid credentials');
             }
 
@@ -121,7 +122,7 @@ class AuthController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error logging in: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error logging in: '.$e->getMessage(), 500);
         }
     }
 
@@ -155,7 +156,7 @@ class AuthController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error logging out: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error logging out: '.$e->getMessage(), 500);
         }
     }
 
@@ -199,7 +200,7 @@ class AuthController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error refreshing token: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error refreshing token: '.$e->getMessage(), 500);
         }
     }
 
@@ -240,7 +241,44 @@ class AuthController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error getting user: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error getting user: '.$e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * GET /api/auth/me/roles-and-permissions
+     * Get authenticated user roles and permissions
+     */
+    #[OA\Get(
+        path: '/api/auth/me/roles-and-permissions',
+        summary: 'Get user roles and permissions',
+        tags: ['Auth'],
+        security: [['jwt' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Roles and permissions retrieved',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'data', type: 'object', properties: [
+                            new OA\Property(property: 'roles', type: 'array', items: new OA\Items(type: 'string', example: 'super_admin')),
+                            new OA\Property(property: 'permissions', type: 'array', items: new OA\Items(type: 'string', example: 'plants.create')),
+                        ]),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated'),
+            new OA\Response(response: 500, description: 'Server error'),
+        ]
+    )]
+    public function meRolesAndPermissions(): JsonResponse
+    {
+        try {
+            $user = $this->authService->meRolesAndPermissions();
+
+            return $this->successResponse(new UserRolesPermissionsResource($user));
+        } catch (Exception $e) {
+            return $this->errorResponse('Error getting roles and permissions: '.$e->getMessage(), 500);
         }
     }
 
@@ -285,7 +323,7 @@ class AuthController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error updating profile: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error updating profile: '.$e->getMessage(), 500);
         }
     }
 }
