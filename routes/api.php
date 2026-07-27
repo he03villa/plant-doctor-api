@@ -14,6 +14,7 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\StoreController;
 use App\Http\Controllers\SubscriptionController;
+use App\Http\Controllers\UserController;
 use App\Http\Controllers\ViveroController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -94,5 +95,9 @@ Route::middleware('auth:api')->group(function () {
         Route::get('permissions', [PermissionController::class, 'index']);
         Route::post('users/{id}/roles', [RoleController::class, 'assignToUser']);
         Route::delete('users/{id}/roles/{role}', [RoleController::class, 'removeFromUser']);
+
+        // Admin — User Management
+        Route::apiResource('users', UserController::class);
+        Route::patch('users/{id}/toggle', [UserController::class, 'toggleActive']);
     });
 });
