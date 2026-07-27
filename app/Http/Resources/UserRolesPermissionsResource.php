@@ -11,7 +11,7 @@ class UserRolesPermissionsResource extends JsonResource
     {
         return [
             'roles' => $this->roles->pluck('name'),
-            'permissions' => $this->permissions->pluck('name'),
+            'permissions' => $this->getAllPermissions()->pluck('name'),
         ];
     }
 }
