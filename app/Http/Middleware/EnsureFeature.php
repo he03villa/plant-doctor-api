@@ -13,20 +13,20 @@ class EnsureFeature
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthenticated',
             ], 401);
         }
 
-        if ($user->hasAnyRole(['admin', 'super_admin'])) {
+        if ($user->hasRole('super_admin')) {
             return $next($request);
         }
 
         $store = $user->store;
 
-        if (!$store) {
+        if (! $store) {
             return response()->json([
                 'success' => false,
                 'message' => 'No store found for this user',
@@ -35,13 +35,13 @@ class EnsureFeature
 
         $subscription = $store->subscription;
 
-        if (!$subscription) {
+        if (! $subscription) {
             return $this->denied($feature);
         }
 
         $value = $subscription?->plan?->features[$feature] ?? false;
 
-        if (!$value) {
+        if (! $value) {
             return $this->denied($feature);
         }
 

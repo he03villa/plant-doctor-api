@@ -14,18 +14,18 @@ class EnsureStoreOwner
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthenticated',
             ], 401);
         }
 
-        if ($user->hasAnyRole(['admin', 'super_admin'])) {
+        if ($user->hasRole('super_admin')) {
             return $next($request);
         }
 
-        if (!$user->hasRole('store_owner')) {
+        if (! $user->hasRole('store_owner')) {
             return response()->json([
                 'success' => false,
                 'message' => 'Forbidden: store_owner role required',
@@ -39,7 +39,7 @@ class EnsureStoreOwner
                 ->where('user_id', $user->id)
                 ->exists();
 
-            if (!$ownsStore) {
+            if (! $ownsStore) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You do not own this store',

@@ -15,7 +15,7 @@ class UserSeeder extends Seeder
                 'name' => 'Admin User',
                 'email' => 'admin@plantdoctor.com',
                 'password' => Hash::make('password'),
-                'role' => 'admin',
+                'role' => 'super_admin',
             ],
             [
                 'name' => 'Expert User',
@@ -42,7 +42,7 @@ class UserSeeder extends Seeder
                 ])
             );
 
-            if (!$user->hasRole($role)) {
+            if (! $user->hasRole($role)) {
                 $user->assignRole($role);
             }
         }

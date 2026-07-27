@@ -7,14 +7,15 @@ use App\Http\Requests\NearbyStoresRequest;
 use App\Http\Requests\UpdateStoreRequest;
 use App\Http\Resources\StoreResource;
 use App\Models\Store;
+use App\Services\StoreService;
 use App\Traits\ApiResponseTrait;
+use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
-use Exception;
 
 class StoreController extends Controller
 {
@@ -22,7 +23,7 @@ class StoreController extends Controller
 
     /**
      * GET /api/stores
-     * List stores (user's own stores, or all for admin)
+     * List stores (user's own stores, or all for super_admin)
      */
     #[OA\Get(
         path: '/api/stores',
@@ -56,7 +57,7 @@ class StoreController extends Controller
 
         $query = Store::withCount('storeProducts');
 
-        if ($user->hasRole('admin')) {
+        if ($user->hasRole('super_admin')) {
             $query->with('user');
         } else {
             $query->where('user_id', $user->id);
@@ -118,7 +119,7 @@ class StoreController extends Controller
 
             $store = Store::create($validated);
 
-            if (!$user->hasRole('store_owner') && !$user->hasRole('admin')) {
+            if (! $user->hasRole('store_owner') && ! $user->hasRole('super_admin')) {
                 $user->assignRole('store_owner');
             }
 
@@ -130,7 +131,7 @@ class StoreController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error creating store: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error creating store: '.$e->getMessage(), 500);
         }
     }
 
@@ -167,13 +168,13 @@ class StoreController extends Controller
         try {
             $store = Store::withCount('storeProducts')->find($id);
 
-            if (!$store) {
+            if (! $store) {
                 return $this->notFoundResponse('Store not found');
             }
 
             return $this->successResponse(new StoreResource($store));
         } catch (Exception $e) {
-            return $this->errorResponse('Error getting store: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error getting store: '.$e->getMessage(), 500);
         }
     }
 
@@ -217,7 +218,7 @@ class StoreController extends Controller
         try {
             $store = Store::find($id);
 
-            if (!$store) {
+            if (! $store) {
                 return $this->notFoundResponse('Store not found');
             }
 
@@ -233,7 +234,7 @@ class StoreController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error updating store: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error updating store: '.$e->getMessage(), 500);
         }
     }
 
@@ -263,7 +264,7 @@ class StoreController extends Controller
         try {
             $store = Store::find($id);
 
-            if (!$store) {
+            if (! $store) {
                 return $this->notFoundResponse('Store not found');
             }
 
@@ -271,7 +272,7 @@ class StoreController extends Controller
 
             return $this->successResponse(null, 'Store deleted');
         } catch (Exception $e) {
-            return $this->errorResponse('Error deleting store: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error deleting store: '.$e->getMessage(), 500);
         }
     }
 
@@ -308,7 +309,7 @@ class StoreController extends Controller
         try {
             $store = Store::find($id);
 
-            if (!$store) {
+            if (! $store) {
                 return $this->notFoundResponse('Store not found');
             }
 
@@ -316,7 +317,7 @@ class StoreController extends Controller
 
             return $this->successResponse(new StoreResource($store), 'Onboarding completed');
         } catch (Exception $e) {
-            return $this->errorResponse('Error completing onboarding: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error completing onboarding: '.$e->getMessage(), 500);
         }
     }
 
@@ -353,15 +354,15 @@ class StoreController extends Controller
         try {
             $store = Store::find($id);
 
-            if (!$store) {
+            if (! $store) {
                 return $this->notFoundResponse('Store not found');
             }
 
-            $store->update(['sync_to_map' => !$store->sync_to_map]);
+            $store->update(['sync_to_map' => ! $store->sync_to_map]);
 
             return $this->successResponse(new StoreResource($store), 'Map visibility toggled');
         } catch (Exception $e) {
-            return $this->errorResponse('Error toggling map visibility: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error toggling map visibility: '.$e->getMessage(), 500);
         }
     }
 
@@ -436,18 +437,18 @@ class StoreController extends Controller
             $productNames = null;
             if ($request->validated('products')) {
                 $productNames = collect(explode(',', $request->validated('products')))
-                    ->map(fn(string $p) => trim($p))
+                    ->map(fn (string $p) => trim($p))
                     ->filter();
             }
 
-            $storeService = app(\App\Services\StoreService::class);
+            $storeService = app(StoreService::class);
             $results = $storeService->findNearbyWithProducts($lat, $lng, $radius, $productNames);
 
             return $this->successResponse($results, 'Nearby stores found');
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error finding nearby stores: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error finding nearby stores: '.$e->getMessage(), 500);
         }
     }
 }

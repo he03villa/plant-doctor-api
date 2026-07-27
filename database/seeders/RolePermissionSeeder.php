@@ -14,7 +14,7 @@ class RolePermissionSeeder extends Seeder
         $guard = 'api';
 
         // Create roles
-        Role::create(['name' => 'admin', 'guard_name' => $guard]);
+        Role::create(['name' => 'super_admin', 'guard_name' => $guard]);
         Role::create(['name' => 'expert', 'guard_name' => $guard]);
         Role::create(['name' => 'user', 'guard_name' => $guard]);
         Role::create(['name' => 'store_owner', 'guard_name' => $guard]);
@@ -36,7 +36,7 @@ class RolePermissionSeeder extends Seeder
 
         // Assign permissions to roles via raw DB inserts
         $rolePermissions = [
-            'admin' => $permissions,
+            'super_admin' => $permissions,
             'expert' => ['plants.view', 'diseases.view', 'diagnoses.view', 'diagnoses.review', 'diagnoses.verify'],
             'user' => ['plants.create', 'plants.view', 'plants.update', 'plants.delete', 'diseases.view', 'diagnoses.create', 'diagnoses.view'],
             'store_owner' => ['orders.create', 'orders.view', 'orders.update', 'orders.delete', 'stores.manage', 'stores.view', 'products.create', 'products.view', 'products.update', 'products.delete', 'plants.view', 'diseases.view'],

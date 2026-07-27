@@ -6,16 +6,19 @@ use App\Http\Controllers\DiseaseController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderPaymentController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\StoreController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\ViveroController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/user', function (\Illuminate\Http\Request $request) {
+Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
@@ -83,5 +86,13 @@ Route::middleware('auth:api')->group(function () {
 
         // Sales — POS transactions per store
         Route::apiResource('stores/{store}/sales', SaleController::class)->only(['index', 'store', 'show', 'destroy']);
+    });
+
+    // Admin — Roles & Permissions
+    Route::prefix('admin')->group(function () {
+        Route::apiResource('roles', RoleController::class);
+        Route::get('permissions', [PermissionController::class, 'index']);
+        Route::post('users/{id}/roles', [RoleController::class, 'assignToUser']);
+        Route::delete('users/{id}/roles/{role}', [RoleController::class, 'removeFromUser']);
     });
 });

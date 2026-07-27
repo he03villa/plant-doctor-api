@@ -13,20 +13,20 @@ class EnsurePremium
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthenticated',
             ], 401);
         }
 
-        if ($user->hasAnyRole(['admin', 'super_admin'])) {
+        if ($user->hasRole('super_admin')) {
             return $next($request);
         }
 
         $store = $user->store;
 
-        if (!$store) {
+        if (! $store) {
             return response()->json([
                 'success' => false,
                 'message' => 'No store found for this user',
@@ -35,7 +35,7 @@ class EnsurePremium
 
         $subscription = $store->subscription;
 
-        if (!$subscription || $subscription?->plan?->slug === 'free' || $subscription->is_expired) {
+        if (! $subscription || $subscription?->plan?->slug === 'free' || $subscription->is_expired) {
             return response()->json([
                 'success' => false,
                 'message' => 'Esta función requiere un plan premium.',

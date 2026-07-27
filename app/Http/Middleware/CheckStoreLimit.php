@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Store;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -13,30 +14,31 @@ class CheckStoreLimit
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthenticated',
             ], 401);
         }
 
-        if ($user->hasAnyRole(['admin', 'super_admin'])) {
+        if ($user->hasRole('super_admin')) {
             return $next($request);
         }
 
         $store = $user->store;
 
-        if (!$store) {
+        if (! $store) {
             return $next($request);
         }
 
         $subscription = $store->subscription;
 
-        if (!$subscription) {
-            $storeCount = \App\Models\Store::where('user_id', $user->id)->count();
+        if (! $subscription) {
+            $storeCount = Store::where('user_id', $user->id)->count();
             if ($storeCount >= 1) {
                 return $this->denied();
             }
+
             return $next($request);
         }
 
@@ -46,7 +48,7 @@ class CheckStoreLimit
             return $next($request);
         }
 
-        $storeCount = \App\Models\Store::where('user_id', $user->id)->count();
+        $storeCount = Store::where('user_id', $user->id)->count();
 
         if ($storeCount >= 1) {
             return $this->denied();
