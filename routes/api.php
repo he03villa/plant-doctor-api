@@ -58,6 +58,10 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/vivero/dashboard', [ViveroController::class, 'dashboard']);
         Route::get('/vivero/accounting/profit-loss', [AccountingController::class, 'profitLoss']);
         Route::get('/vivero/accounting/profit-loss/export', [AccountingController::class, 'export']);
+        Route::get('/vivero/accounting/daily-sales', [AccountingController::class, 'dailySales']);
+        Route::get('/vivero/accounting/tax-summary', [AccountingController::class, 'taxSummary']);
+        Route::get('/vivero/accounting/balance-sheet', [AccountingController::class, 'balanceSheet']);
+        Route::get('/vivero/accounting/monthly-close', [AccountingController::class, 'monthlyClose']);
     });
 
     Route::get('/stores/nearby', [StoreController::class, 'nearby']);
