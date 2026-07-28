@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ReviewDiagnosisRequest;
 use App\Http\Requests\StoreDiagnosisRequest;
 use App\Http\Resources\DiagnosisResource;
 use App\Models\Diagnosis;
@@ -9,12 +10,12 @@ use App\Models\Plant;
 use App\Services\DiagnosisService;
 use App\Services\StoreService;
 use App\Traits\ApiResponseTrait;
+use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
-use Exception;
 
 class DiagnosisController extends Controller
 {
@@ -96,7 +97,7 @@ class DiagnosisController extends Controller
             $validated = $request->validated();
 
             $plant = null;
-            if (!empty($validated['plant_id'])) {
+            if (! empty($validated['plant_id'])) {
                 $plant = Plant::findOrFail($validated['plant_id']);
             }
 
@@ -109,7 +110,7 @@ class DiagnosisController extends Controller
             $diagnosis->load(['plant', 'disease']);
 
             $nearbyStores = null;
-            if (!empty($validated['latitude']) && !empty($validated['longitude']) && $diagnosis->disease_id) {
+            if (! empty($validated['latitude']) && ! empty($validated['longitude']) && $diagnosis->disease_id) {
                 $products = $diagnosis->disease->products;
                 if ($products->isNotEmpty()) {
                     $storeService = app(StoreService::class);
@@ -129,7 +130,7 @@ class DiagnosisController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error creating diagnosis: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error creating diagnosis: '.$e->getMessage(), 500);
         }
     }
 
@@ -175,7 +176,7 @@ class DiagnosisController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error getting diagnosis: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error getting diagnosis: '.$e->getMessage(), 500);
         }
     }
 
@@ -219,7 +220,94 @@ class DiagnosisController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error requesting expert review: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error requesting expert review: '.$e->getMessage(), 500);
         }
+    }
+
+    /**
+     * POST /api/diagnoses/{diagnosis}/review
+     * Expert submits review for a diagnosis
+     */
+    #[OA\Post(
+        path: '/api/diagnoses/{diagnosis}/review',
+        summary: 'Expert submits review',
+        tags: ['Diagnoses'],
+        security: [['jwt' => []]],
+        parameters: [
+            new OA\Parameter(name: 'diagnosis', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(ref: '#/components/schemas/ReviewDiagnosisRequest')
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Review submitted',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/Diagnosis'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: 'Validation error'),
+            new OA\Response(response: 500, description: 'Server error'),
+        ]
+    )]
+    public function review(ReviewDiagnosisRequest $request, Diagnosis $diagnosis): JsonResponse
+    {
+        try {
+            if (! $request->user()->hasAnyRole(['expert', 'super_admin'])) {
+                return $this->forbiddenResponse('Unauthorized');
+            }
+
+            $diagnosis = $this->diagnosisService->reviewDiagnosis(
+                $diagnosis,
+                $request->user(),
+                $request->validated()
+            );
+
+            $diagnosis->load(['plant', 'disease', 'expert']);
+
+            return $this->successResponse(new DiagnosisResource($diagnosis), 'Review submitted');
+        } catch (ValidationException $e) {
+            return $this->validationErrorResponse($e->errors());
+        } catch (Exception $e) {
+            return $this->errorResponse('Error submitting review: '.$e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * GET /api/admin/diagnoses
+     * Admin/Expert list all diagnoses with filters
+     */
+    #[OA\Get(
+        path: '/api/admin/diagnoses',
+        summary: 'Admin/Expert list diagnoses',
+        tags: ['Admin Diagnoses'],
+        security: [['jwt' => []]],
+        parameters: [
+            new OA\Parameter(name: 'status', in: 'query', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'per_page', in: 'query', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Diagnoses listed'),
+        ]
+    )]
+    public function adminIndex(Request $request): AnonymousResourceCollection
+    {
+        if (! $request->user()->hasAnyRole(['expert', 'super_admin'])) {
+            return $this->forbiddenResponse('Unauthorized');
+        }
+
+        $query = Diagnosis::with(['plant', 'disease', 'expert', 'user'])
+            ->latest();
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        return DiagnosisResource::collection($query->paginate($request->input('per_page', 15)));
     }
 }

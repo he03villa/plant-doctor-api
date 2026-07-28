@@ -55,6 +55,23 @@ class DiagnosisService
     {
         $diagnosis->update([
             'status' => 'pending_review',
+            'expert_verified' => true,
+        ]);
+
+        return $diagnosis;
+    }
+
+    public function reviewDiagnosis(Diagnosis $diagnosis, User $expert, array $data): Diagnosis
+    {
+        if ($diagnosis->status !== 'pending_review') {
+            throw new \Exception('This diagnosis is not pending review.');
+        }
+
+        $diagnosis->update([
+            'expert_id' => $expert->id,
+            'expert_verified' => $data['expert_verified'],
+            'expert_notes' => $data['expert_notes'] ?? null,
+            'status' => 'completed',
         ]);
 
         return $diagnosis;

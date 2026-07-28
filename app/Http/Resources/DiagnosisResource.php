@@ -35,6 +35,7 @@ class DiagnosisResource extends JsonResource
             'expert_notes' => $this->expert_notes,
             'plant' => new PlantResource($this->whenLoaded('plant')),
             'expert' => new UserResource($this->whenLoaded('expert')),
+            'user' => new UserResource($this->whenLoaded('user')),
             'nearby_stores' => $this->nearby_stores,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),

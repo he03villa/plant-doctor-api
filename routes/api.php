@@ -42,6 +42,7 @@ Route::middleware('auth:api')->group(function () {
     Route::apiResource('diseases', DiseaseController::class)->only(['index', 'show']);
     Route::apiResource('diagnoses', DiagnosisController::class)->only(['index', 'store', 'show']);
     Route::post('/diagnoses/{diagnosis}/request-expert-review', [DiagnosisController::class, 'requestExpertReview']);
+    Route::post('/diagnoses/{diagnosis}/review', [DiagnosisController::class, 'review']);
 
     // Orders — premium only for parse (AI invoicing)
     Route::middleware('premium')->group(function () {
@@ -100,5 +101,8 @@ Route::middleware('auth:api')->group(function () {
         // Admin — User Management
         Route::apiResource('users', UserController::class);
         Route::patch('users/{id}/toggle', [UserController::class, 'toggleActive']);
+
+        // Admin — Diagnoses (for expert review)
+        Route::get('diagnoses', [DiagnosisController::class, 'adminIndex']);
     });
 });
