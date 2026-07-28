@@ -10,7 +10,7 @@ class UserRolesPermissionsResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'roles' => $this->roles->pluck('name'),
+            'roles' => $this->getRoleNames(),
             'permissions' => $this->getAllPermissions()->pluck('name'),
         ];
     }

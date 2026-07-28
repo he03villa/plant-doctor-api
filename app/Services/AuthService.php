@@ -23,7 +23,7 @@ class AuthService
         $token = JWTAuth::fromUser($user);
 
         return [
-            'user' => $user->load('roles'),
+            'user' => $user,
             'token' => $token,
         ];
     }
@@ -34,7 +34,7 @@ class AuthService
             return null;
         }
 
-        $user = JWTAuth::user()->load('roles');
+        $user = JWTAuth::user();
 
         return [
             'user' => $user,
@@ -58,7 +58,7 @@ class AuthService
 
     public function me(): User
     {
-        return Auth::user()->load('roles');
+        return Auth::user();
     }
 
     public function meRolesAndPermissions(): User
@@ -71,6 +71,6 @@ class AuthService
         $user = Auth::user();
         $user->update($data);
 
-        return $user->load('roles');
+        return $user;
     }
 }
