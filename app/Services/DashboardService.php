@@ -3,7 +3,8 @@
 namespace App\Services;
 
 use App\Models\Order;
-use App\Models\OrderItem;
+use App\Models\Sale;
+use App\Models\SaleItem;
 use App\Models\Store;
 use App\Models\StoreProduct;
 use Illuminate\Support\Carbon;
@@ -26,6 +27,9 @@ class DashboardService
             'chart' => $this->getWeeklyChart($store),
             'top_products' => $this->getTopProducts($store, $range),
             'recent_invoices' => $this->getRecentInvoices($store),
+            'inventory' => $this->getInventorySummary($store),
+            'payment_methods' => $this->getPaymentMethods($store, $range, $prevRange),
+            'expenses' => $this->getExpensesSummary($store, $range, $prevRange),
         ];
     }
 
@@ -53,19 +57,19 @@ class DashboardService
 
     private function getSummary(Store $store, array $range, array $prevRange, int $lowStockThreshold): array
     {
-        $salesCount = Order::where('store_id', $store->id)
+        $salesCount = Sale::where('store_id', $store->id)
             ->whereBetween('created_at', $range)
             ->count();
 
-        $salesTotal = Order::where('store_id', $store->id)
+        $salesTotal = Sale::where('store_id', $store->id)
             ->whereBetween('created_at', $range)
             ->sum('total');
 
-        $prevSalesCount = Order::where('store_id', $store->id)
+        $prevSalesCount = Sale::where('store_id', $store->id)
             ->whereBetween('created_at', $prevRange)
             ->count();
 
-        $prevSalesTotal = Order::where('store_id', $store->id)
+        $prevSalesTotal = Sale::where('store_id', $store->id)
             ->whereBetween('created_at', $prevRange)
             ->sum('total');
 
@@ -118,7 +122,7 @@ class DashboardService
         $startOfWeek = Carbon::now()->startOfWeek();
         $endOfWeek = Carbon::now()->endOfWeek()->addDay();
 
-        $dailySales = Order::where('store_id', $store->id)
+        $dailySales = Sale::where('store_id', $store->id)
             ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
             ->selectRaw('EXTRACT(ISODOW FROM created_at) as day_num, SUM(total) as total')
             ->groupBy('day_num')
@@ -141,9 +145,9 @@ class DashboardService
 
     private function getTopProducts(Store $store, array $range): array
     {
-        return OrderItem::whereHas('order', function ($query) use ($store, $range) {
+        return SaleItem::whereHas('sale', function ($query) use ($store, $range) {
             $query->where('store_id', $store->id)
-                ->whereBetween('orders.created_at', $range);
+                ->whereBetween('created_at', $range);
         })
             ->select(
                 'product_name',
@@ -191,5 +195,110 @@ class DashboardService
             7 => 'Sun',
             default => '',
         };
+    }
+
+    private function getInventorySummary(Store $store): array
+    {
+        $total = StoreProduct::where('store_id', $store->id)->count();
+        $active = StoreProduct::where('store_id', $store->id)->where('is_active', true)->count();
+        $lowStock = StoreProduct::where('store_id', $store->id)
+            ->where('is_active', true)
+            ->whereColumn('stock_quantity', '<=', 'min_stock')
+            ->where('stock_quantity', '>', 0)
+            ->count();
+        $outOfStock = StoreProduct::where('store_id', $store->id)
+            ->where('is_active', true)
+            ->where('stock_quantity', '<=', 0)
+            ->count();
+
+        $categories = StoreProduct::where('store_id', $store->id)
+            ->where('is_active', true)
+            ->select('category', DB::raw('count(*) as count'))
+            ->groupBy('category')
+            ->orderByDesc('count')
+            ->get()
+            ->map(fn($row) => [
+                'name' => $row->category ?? 'Sin categoría',
+                'count' => (int) $row->count,
+            ])
+            ->toArray();
+
+        return [
+            'total_products' => $total,
+            'active_products' => $active,
+            'low_stock_count' => $lowStock,
+            'out_of_stock_count' => $outOfStock,
+            'categories' => $categories,
+        ];
+    }
+
+    private function getPaymentMethods(Store $store, array $range, array $prevRange): array
+    {
+        $current = Sale::where('store_id', $store->id)
+            ->whereBetween('created_at', $range)
+            ->select('payment_method', DB::raw('SUM(total) as total'), DB::raw('count(*) as count'))
+            ->groupBy('payment_method')
+            ->get()
+            ->keyBy('payment_method');
+
+        $previous = Sale::where('store_id', $store->id)
+            ->whereBetween('created_at', $prevRange)
+            ->select('payment_method', DB::raw('SUM(total) as total'))
+            ->groupBy('payment_method')
+            ->get()
+            ->keyBy('payment_method');
+
+        $labels = ['cash' => 'Efectivo', 'card' => 'Tarjeta', 'transfer' => 'Transferencia'];
+
+        return collect(['cash', 'card', 'transfer'])->map(fn($method) => [
+            'method' => $method,
+            'label' => $labels[$method],
+            'total' => (float) ($current[$method]->total ?? 0),
+            'count' => (int) ($current[$method]->count ?? 0),
+        ])->toArray();
+    }
+
+    private function getExpensesSummary(Store $store, array $range, array $prevRange): array
+    {
+        $totalSpent = Order::where('store_id', $store->id)
+            ->whereBetween('created_at', $range)
+            ->sum('total');
+
+        $invoiceCount = Order::where('store_id', $store->id)
+            ->whereBetween('created_at', $range)
+            ->count();
+
+        $prevTotal = Order::where('store_id', $store->id)
+            ->whereBetween('created_at', $prevRange)
+            ->sum('total');
+
+        $prevCount = Order::where('store_id', $store->id)
+            ->whereBetween('created_at', $prevRange)
+            ->count();
+
+        $totalTrend = $this->calculateTrendPercent((float) $totalSpent, (float) $prevTotal);
+        $countTrend = $this->calculateTrendPercent((float) $invoiceCount, (float) $prevCount);
+
+        $byType = Order::where('store_id', $store->id)
+            ->whereBetween('created_at', $range)
+            ->select('type', DB::raw('SUM(total) as total'), DB::raw('count(*) as count'))
+            ->groupBy('type')
+            ->get()
+            ->map(fn($row) => [
+                'type' => $row->type,
+                'total' => (float) $row->total,
+                'count' => (int) $row->count,
+            ])
+            ->toArray();
+
+        return [
+            'total_spent' => (float) $totalSpent,
+            'invoice_count' => (int) $invoiceCount,
+            'total_trend' => $totalTrend['value'],
+            'total_trend_dir' => $totalTrend['direction'],
+            'count_trend' => $countTrend['value'],
+            'count_trend_dir' => $countTrend['direction'],
+            'by_type' => $byType,
+        ];
     }
 }

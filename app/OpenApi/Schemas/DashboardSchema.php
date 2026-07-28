@@ -50,6 +50,44 @@ use OpenApi\Attributes as OA;
                     new OA\Property(property: 'created_at', type: 'string', format: 'date-time'),
                 ]
             )),
+            new OA\Property(property: 'inventory', type: 'object', properties: [
+                new OA\Property(property: 'total_products', type: 'integer', example: 150),
+                new OA\Property(property: 'active_products', type: 'integer', example: 120),
+                new OA\Property(property: 'low_stock_count', type: 'integer', example: 8),
+                new OA\Property(property: 'out_of_stock_count', type: 'integer', example: 3),
+                new OA\Property(property: 'categories', type: 'array', items: new OA\Items(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'name', type: 'string', example: 'Plantas'),
+                        new OA\Property(property: 'count', type: 'integer', example: 45),
+                    ]
+                )),
+            ]),
+            new OA\Property(property: 'payment_methods', type: 'array', items: new OA\Items(
+                type: 'object',
+                properties: [
+                    new OA\Property(property: 'method', type: 'string', example: 'cash'),
+                    new OA\Property(property: 'label', type: 'string', example: 'Efectivo'),
+                    new OA\Property(property: 'total', type: 'number', example: 500000),
+                    new OA\Property(property: 'count', type: 'integer', example: 12),
+                ]
+            )),
+            new OA\Property(property: 'expenses', type: 'object', properties: [
+                new OA\Property(property: 'total_spent', type: 'number', example: 350000),
+                new OA\Property(property: 'invoice_count', type: 'integer', example: 5),
+                new OA\Property(property: 'total_trend', type: 'integer', example: 15),
+                new OA\Property(property: 'total_trend_dir', type: 'string', enum: ['up', 'down', 'same'], example: 'down'),
+                new OA\Property(property: 'count_trend', type: 'integer', example: 0),
+                new OA\Property(property: 'count_trend_dir', type: 'string', enum: ['up', 'down', 'same'], example: 'same'),
+                new OA\Property(property: 'by_type', type: 'array', items: new OA\Items(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'type', type: 'string', example: 'supplies'),
+                        new OA\Property(property: 'total', type: 'number', example: 200000),
+                        new OA\Property(property: 'count', type: 'integer', example: 3),
+                    ]
+                )),
+            ]),
         ]),
     ]
 )]
