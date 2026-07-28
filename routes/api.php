@@ -15,6 +15,7 @@ use App\Http\Controllers\SaleController;
 use App\Http\Controllers\StoreController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\ViveroController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -55,6 +56,8 @@ Route::middleware('auth:api')->group(function () {
     // Dashboard — advanced analytics requires Pro+
     Route::middleware('feature:has_advanced_dashboard')->group(function () {
         Route::get('/vivero/dashboard', [ViveroController::class, 'dashboard']);
+        Route::get('/vivero/accounting/profit-loss', [AccountingController::class, 'profitLoss']);
+        Route::get('/vivero/accounting/profit-loss/export', [AccountingController::class, 'export']);
     });
 
     Route::get('/stores/nearby', [StoreController::class, 'nearby']);
