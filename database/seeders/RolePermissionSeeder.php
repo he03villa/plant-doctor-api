@@ -13,13 +13,13 @@ class RolePermissionSeeder extends Seeder
     {
         $guard = 'api';
 
-        // Create roles
-        Role::create(['name' => 'super_admin', 'guard_name' => $guard]);
-        Role::create(['name' => 'expert', 'guard_name' => $guard]);
-        Role::create(['name' => 'user', 'guard_name' => $guard]);
-        Role::create(['name' => 'store_owner', 'guard_name' => $guard]);
+        // Create roles (idempotent)
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => $guard]);
+        Role::firstOrCreate(['name' => 'expert', 'guard_name' => $guard]);
+        Role::firstOrCreate(['name' => 'user', 'guard_name' => $guard]);
+        Role::firstOrCreate(['name' => 'store_owner', 'guard_name' => $guard]);
 
-        // Create permissions
+        // Create permissions (idempotent)
         $permissions = [
             'plants.create', 'plants.view', 'plants.update', 'plants.delete',
             'diseases.view', 'diseases.create', 'diseases.update', 'diseases.delete',
@@ -31,10 +31,10 @@ class RolePermissionSeeder extends Seeder
         ];
 
         foreach ($permissions as $permission) {
-            Permission::create(['name' => $permission, 'guard_name' => $guard]);
+            Permission::firstOrCreate(['name' => $permission, 'guard_name' => $guard]);
         }
 
-        // Assign permissions to roles via raw DB inserts
+        // Assign permissions to roles (idempotent)
         $rolePermissions = [
             'super_admin' => $permissions,
             'expert' => ['plants.view', 'diseases.view', 'diagnoses.view', 'diagnoses.review', 'diagnoses.verify'],
@@ -44,10 +44,10 @@ class RolePermissionSeeder extends Seeder
 
         foreach ($rolePermissions as $roleName => $rolePerms) {
             $role = Role::where('name', $roleName)->first();
-            $permissionIds = Permission::whereIn('name', $rolePerms)->pluck('id', 'name');
+            $permissionIds = Permission::whereIn('name', $rolePerms)->pluck('id');
 
             foreach ($permissionIds as $permId) {
-                DB::table('role_has_permissions')->insert([
+                DB::table('role_has_permissions')->insertOrIgnore([
                     'role_id' => $role->id,
                     'permission_id' => $permId,
                 ]);
