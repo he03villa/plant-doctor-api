@@ -54,6 +54,7 @@ class OrderResource extends JsonResource
                     'id' => $item->matchedProduct->id,
                     'name' => $item->matchedProduct->name,
                     'sale_price' => (float) $item->matchedProduct->sale_price,
+                    'purchase_price' => $item->matchedProduct->purchase_price ? (float) $item->matchedProduct->purchase_price : null,
                 ] : null,
             ]),
             'payments' => $this->whenLoaded('payments', function () {

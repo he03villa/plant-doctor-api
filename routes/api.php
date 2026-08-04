@@ -49,6 +49,8 @@ Route::middleware('auth:api')->group(function () {
     Route::middleware('premium')->group(function () {
         Route::post('/orders/parse', [OrderController::class, 'parse']);
     });
+    Route::get('/orders/pending-items', [OrderController::class, 'pendingItems']);
+    Route::post('/orders/items/link', [OrderController::class, 'linkItems']);
     Route::apiResource('orders', OrderController::class);
     Route::post('/orders/{order}/verify', [OrderController::class, 'verify']);
     Route::apiResource('orders/{order}/payments', OrderPaymentController::class)->only(['index', 'store', 'destroy']);

@@ -81,7 +81,7 @@ Services:
 │   └── seeders/              # DiseaseSeeder (catalog base)
 ├── resources/views/          # welcome + email templates
 ├── routes/                   # api.php, api_plants.php, api_diseases.php, api_diagnoses.php, channels.php
-├── tests/                    # Unit + Feature (SQLite :memory:)
+├── tests/                    # Unit + Feature (dedicated PostgreSQL test DB)
 ├── public/                   # HTTP entrypoint
 ├── docker-compose.yml
 ├── Dockerfile
@@ -101,7 +101,7 @@ Services:
 
 | Command | Description |
 |---------|-------------|
-| `APP composer run test` | Tests (PHPUnit, SQLite :memory:) |
+| `APP composer run test` | Tests (PHPUnit, PostgreSQL test DB `plant_doctor_test`) |
 | `APP php artisan jwt:secret` | Regenerate JWT secret |
 | `APP php artisan config:cache && APP php artisan route:cache` | Cache bootstrap |
 | `APP php artisan octane:reload` | Reload Octane without downtime |
@@ -184,10 +184,12 @@ APP php artisan permission:cache-clear
 
 ## Testing
 
-- **SQLite in-memory** (`DB_DATABASE=:memory:`) — no external DB needed for tests.
+- **Dedicated PostgreSQL test DB** (`plant_doctor_test`) — required because the PostGIS migration (`enable_postgis_extension`, `geometry` columns) cannot run on SQLite. `phpunit.xml` sets `DB_CONNECTION=pgsql` / `DB_DATABASE=plant_doctor_test`. Create it once: `docker compose exec postgres psql -U postgres -c "CREATE DATABASE plant_doctor_test;"`.
+- **NEVER run `php artisan test` directly with a cached config** — `RefreshDatabase` runs `migrate:fresh` against the resolved connection. If `bootstrap/cache/config.php` is cached with the dev DB (`plant_doctor`), it wipes development data. Always run tests via `composer run test` (it runs `config:clear` first).
+- **Safety guard**: `tests/TestCase.php` aborts with a clear error if the resolved database is not `plant_doctor_test` (protects against the cached-config scenario above).
 - Test suites: `tests/Unit`, `tests/Feature`.
 - Create factories for Plant, Disease, Diagnosis as needed.
-- Run focused: `APP php artisan test --filter=MethodName` or `APP php artisan test tests/Feature/SomeTest.php`.
+- Run focused: `APP composer run test -- --filter=MethodName` or `APP composer run test -- tests/Feature/SomeTest.php`.
 
 ## Broadcast events
 
@@ -202,7 +204,7 @@ Channels: `plant.{id}`, `user.{id}`, `App.Models.User.{id}`.
 - `config/cache.php` — default: `database`.
 - `.env.example` defaults to PostgreSQL + log mailer — good for local dev.
 - `AppServiceProvider::boot()` forces `Carbon::setLocale('es')` (Spanish dates) and `URL::forceRootUrl(config('app.url'))`.
-- **Tests**: Run via `composer run test` (config:clear + phpunit). SQLite :memory:.
+- **Tests**: Run via `composer run test` (config:clear + phpunit). Uses the dedicated PostgreSQL test DB `plant_doctor_test` — never the dev DB.
 - **GeolocationService**: `findLocationByCoordinates()` caches Nominatim results for 1 day; `findNearbyPlants()` uses PostGIS spatial queries.
 - **Status transitions**: Use `transitionTo()` on the model (validates via `canTransitionTo()`). Don't change `status` directly in controller `update()` — use dedicated status routes instead.
 - **Observer timing**: Observers (`PlantObserver`, `DiseaseObserver`) call `$model->refresh()` after geolocation so the `HasPublication` trait sees fresh location IDs.

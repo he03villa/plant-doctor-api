@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\LinkOrderItemsRequest;
 use App\Http\Requests\ParseInvoiceRequest;
 use App\Http\Requests\StoreOrderRequest;
 use App\Http\Resources\OrderResource;
@@ -10,12 +11,13 @@ use App\Models\Store;
 use App\Services\OrderService;
 use App\Traits\ApiResponseTrait;
 use App\Traits\StoreScoped;
+use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use OpenApi\Attributes as OA;
-use Exception;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class OrderController extends Controller
 {
@@ -99,7 +101,7 @@ class OrderController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error parsing invoice: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error parsing invoice: '.$e->getMessage(), 500);
         }
     }
 
@@ -154,7 +156,7 @@ class OrderController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error creating order: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error creating order: '.$e->getMessage(), 500);
         }
     }
 
@@ -196,7 +198,7 @@ class OrderController extends Controller
 
             return $this->successResponse(OrderResource::collection($orders));
         } catch (Exception $e) {
-            return $this->errorResponse('Error listing orders: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error listing orders: '.$e->getMessage(), 500);
         }
     }
 
@@ -233,13 +235,13 @@ class OrderController extends Controller
         try {
             $order = $this->orderService->getOrder($request->user(), $id);
 
-            if (!$order) {
+            if (! $order) {
                 return $this->notFoundResponse('Order not found');
             }
 
             return $this->successResponse(new OrderResource($order));
         } catch (Exception $e) {
-            return $this->errorResponse('Error getting order: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error getting order: '.$e->getMessage(), 500);
         }
     }
 
@@ -283,7 +285,7 @@ class OrderController extends Controller
         try {
             $order = $this->orderService->getOrder($request->user(), $id);
 
-            if (!$order) {
+            if (! $order) {
                 return $this->notFoundResponse('Order not found');
             }
 
@@ -293,7 +295,7 @@ class OrderController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error updating order: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error updating order: '.$e->getMessage(), 500);
         }
     }
 
@@ -323,7 +325,7 @@ class OrderController extends Controller
         try {
             $order = $this->orderService->getOrder($request->user(), $id);
 
-            if (!$order) {
+            if (! $order) {
                 return $this->notFoundResponse('Order not found');
             }
 
@@ -331,7 +333,7 @@ class OrderController extends Controller
 
             return $this->successResponse(null, 'Order deleted');
         } catch (Exception $e) {
-            return $this->errorResponse('Error deleting order: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error deleting order: '.$e->getMessage(), 500);
         }
     }
 
@@ -368,7 +370,7 @@ class OrderController extends Controller
         try {
             $order = $this->orderService->getOrder($request->user(), $id);
 
-            if (!$order) {
+            if (! $order) {
                 return $this->notFoundResponse('Order not found');
             }
 
@@ -376,7 +378,116 @@ class OrderController extends Controller
 
             return $this->successResponse(new OrderResource($order), 'Order verified');
         } catch (Exception $e) {
-            return $this->errorResponse('Error verifying order: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error verifying order: '.$e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * GET /api/orders/pending-items
+     * List supplier invoice items that have no linked product yet
+     */
+    #[OA\Get(
+        path: '/api/orders/pending-items',
+        summary: 'List pending items without linked product',
+        tags: ['Orders'],
+        security: [['jwt' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Pending items grouped by product name',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'data', type: 'array', items: new OA\Items(
+                            type: 'object',
+                            properties: [
+                                new OA\Property(property: 'product_name', type: 'string'),
+                                new OA\Property(property: 'total_quantity', type: 'integer'),
+                                new OA\Property(property: 'order_count', type: 'integer'),
+                                new OA\Property(property: 'latest_unit_price', type: 'number', nullable: true),
+                                new OA\Property(property: 'suggested_sale_price', type: 'number', nullable: true),
+                            ]
+                        )),
+                    ]
+                )
+            ),
+        ]
+    )]
+    public function pendingItems(Request $request): JsonResponse
+    {
+        try {
+            $store = $this->getStoreForUser($request->user());
+            $groups = $this->orderService->getPendingItems($store);
+
+            return $this->successResponse($groups, 'Pending items retrieved');
+        } catch (HttpExceptionInterface $e) {
+            return $this->errorResponse($e->getMessage(), $e->getStatusCode());
+        } catch (Exception $e) {
+            return $this->errorResponse('Error getting pending items: '.$e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * POST /api/orders/items/link
+     * Link all pending items matching a product name to a store product
+     */
+    #[OA\Post(
+        path: '/api/orders/items/link',
+        summary: 'Link pending items to a product',
+        tags: ['Orders'],
+        security: [['jwt' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                type: 'object',
+                required: ['product_name', 'product_id'],
+                properties: [
+                    new OA\Property(property: 'product_name', type: 'string', example: 'Fertilizante NPK'),
+                    new OA\Property(property: 'product_id', type: 'integer', example: 12),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Items linked',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'data', type: 'object', properties: [
+                            new OA\Property(property: 'linked_count', type: 'integer', example: 3),
+                        ]),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Product not found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
+        ]
+    )]
+    public function linkItems(LinkOrderItemsRequest $request): JsonResponse
+    {
+        try {
+            $validated = $request->validated();
+
+            $store = $this->getStoreForUser($request->user());
+
+            $count = $this->orderService->linkPendingItems(
+                $store,
+                $validated['product_name'],
+                $validated['product_id']
+            );
+
+            return $this->successResponse(['linked_count' => $count], 'Items linked');
+        } catch (ValidationException $e) {
+            return $this->validationErrorResponse($e->errors());
+        } catch (InvalidArgumentException $e) {
+            return $this->notFoundResponse($e->getMessage());
+        } catch (HttpExceptionInterface $e) {
+            return $this->errorResponse($e->getMessage(), $e->getStatusCode());
+        } catch (Exception $e) {
+            return $this->errorResponse('Error linking items: '.$e->getMessage(), 500);
         }
     }
 }
