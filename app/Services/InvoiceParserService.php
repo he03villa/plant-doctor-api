@@ -76,6 +76,7 @@ class InvoiceParserService
             '/(\d+)\s+x\s+\$?\s*([\d\.\,]+)\s+(.+?)(?:\s+\$?\s*([\d\.\,]+))?$/m',
             '/(.+?)\s+(\d+)\s+(?:u|und|pcs?)\s+\$?\s*([\d\.\,]+)\s+\$?\s*([\d\.\,]+)/im',
             '/(?:^|\n)\s*(.+?)\s{2,}(\d+)\s+\$?\s*([\d\.\,]+)\s+\$?\s*([\d\.\,]+)/m',
+            '/(?:^|\n)\s*(\d{1,3})\s{2,}(.+?)\s{2,}\$?\s*([\d\.\,]{1,})$/m',
         ];
 
         foreach ($patterns as $pattern) {
@@ -114,6 +115,21 @@ class InvoiceParserService
                 'quantity' => (int) $match[2],
                 'unit_price' => $this->parseNumber($match[3]),
                 'total_price' => $this->parseNumber($match[4]),
+            ];
+        }
+
+        if ($count === 4 && is_numeric($match[1])) {
+            $name = trim($match[2]);
+            if (!preg_match('/[a-záéíóúñ]/i', $name)) {
+                return null;
+            }
+            $quantity = max(1, (int) $match[1]);
+            $totalPrice = $this->parseNumber($match[3]);
+            return [
+                'product_name' => $name,
+                'quantity' => $quantity,
+                'unit_price' => round($totalPrice / $quantity, 2),
+                'total_price' => $totalPrice,
             ];
         }
 
@@ -165,6 +181,7 @@ Texto OCR:
 TIPOS DE DOCUMENTO SOPORTADOS:
 1. **Facturas comerciales** (productos, cantidades, precios unitarios)
 2. **Recibos de servicios públicos** (energía, agua, aseo, gas) — NO tienen productos individuales
+3. **Recibos de supermercado / almacén de cadena (POS)** (ej: Makro, PriceSmart, Éxito, Olímpica) — cada línea de producto debe extraerse como ítem
 
 REGLAS PARA RECIBOS DE SERVICIOS PÚBLICOS:
 - El proveedor suele aparecer después de "EMPRESA:" o es el nombre de la empresa en mayúsculas (ej: "ASEO TECNICO DE LA SABANA S.A.S.", "Air-e SAS ESP", "EPM", "EMCALI")
@@ -173,11 +190,23 @@ REGLAS PARA RECIBOS DE SERVICIOS PÚBLICOS:
 - El número de factura puede ser un número largo como "67190726" o "1029643"
 - Para servicios públicos, crea UN SOLO ítem descriptivo con el concepto del servicio
 
+REGLAS PARA RECIBOS DE SUPERMERCADO/ALMACÉN DE CADENA:
+- Las líneas de producto aparecen en formatos como:
+  * "2 ARROZ DIANA 500G 4.500" → cantidad, nombre, total
+  * "TOMATE CHONTO 1.000 Kg 1.580" → nombre, cantidad, unidad, total
+  * "7709876 PAN MOLDE 12.900" → (código de barras opcional) nombre, total
+- Unidades frecuentes: KGM (kilogramo), EA/UND/PCS (unidad), LT/L, GR, ML
+- Si la línea tiene solo cantidad y total (sin precio unitario), calcula unit_price = total / cantidad
+- Si no hay cantidad explícita, usa cantidad = 1
+- NO incluyas como ítems: líneas de promociones ("La Jugada ganadora", sorteos), mensajes de bienvenida, "Vales Emitidos", "Tarjeta Déb/Créd", "Articulos Vendidos", "CAJA", "ATENDIDO POR", números de transacción
+- El proveedor suele ser el nombre del establecimiento; si no aparece claramente usa null
+
 FORMATO DE NÚMEROS COLOMBIANOS:
 - "$165.440" = 165440 (punto es separador de miles)
 - "$1.234.567" = 1234567
 - "42.022" = 42022
 - Si hay coma: "$165,440" = 165440 (también separador de miles en algunos contextos)
+- El OCR puede insertar espacios entre cifras (ej: "67. 699"); únelos antes de interpretar el número
 
 Responde ÚNICAMENTE con JSON válido:
 {
