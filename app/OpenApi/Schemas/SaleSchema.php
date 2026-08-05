@@ -15,6 +15,13 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'total', type: 'number', example: 90000),
         new OA\Property(property: 'currency', type: 'string', example: 'COP'),
         new OA\Property(property: 'payment_method', type: 'string', enum: ['cash', 'card', 'transfer'], example: 'cash'),
+        new OA\Property(property: 'payments', type: 'array', items: new OA\Items(
+            type: 'object',
+            properties: [
+                new OA\Property(property: 'method', type: 'string', enum: ['cash', 'card', 'transfer'], example: 'cash'),
+                new OA\Property(property: 'amount', type: 'number', example: 45000),
+            ]
+        )),
         new OA\Property(property: 'status', type: 'string', enum: ['completed', 'cancelled'], example: 'completed'),
         new OA\Property(property: 'notes', type: 'string', nullable: true),
         new OA\Property(property: 'store', type: 'object', properties: [
@@ -44,6 +51,4 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'updated_at', type: 'string', format: 'date-time'),
     ]
 )]
-class SaleSchema
-{
-}
+class SaleSchema {}

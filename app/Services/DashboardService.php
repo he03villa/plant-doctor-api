@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Order;
 use App\Models\Sale;
 use App\Models\SaleItem;
+use App\Models\SalePayment;
 use App\Models\Store;
 use App\Models\StoreProduct;
 use Illuminate\Support\Carbon;
@@ -234,17 +235,19 @@ class DashboardService
 
     private function getPaymentMethods(Store $store, array $range, array $prevRange): array
     {
-        $current = Sale::where('store_id', $store->id)
-            ->whereBetween('created_at', $range)
-            ->select('payment_method', DB::raw('SUM(total) as total'), DB::raw('count(*) as count'))
-            ->groupBy('payment_method')
+        $current = SalePayment::join('sales', 'sales.id', '=', 'sale_payments.sale_id')
+            ->where('sales.store_id', $store->id)
+            ->whereBetween('sales.created_at', $range)
+            ->select('sale_payments.payment_method', DB::raw('SUM(sale_payments.amount) as total'), DB::raw('count(*) as count'))
+            ->groupBy('sale_payments.payment_method')
             ->get()
             ->keyBy('payment_method');
 
-        $previous = Sale::where('store_id', $store->id)
-            ->whereBetween('created_at', $prevRange)
-            ->select('payment_method', DB::raw('SUM(total) as total'))
-            ->groupBy('payment_method')
+        $previous = SalePayment::join('sales', 'sales.id', '=', 'sale_payments.sale_id')
+            ->where('sales.store_id', $store->id)
+            ->whereBetween('sales.created_at', $prevRange)
+            ->select('sale_payments.payment_method', DB::raw('SUM(sale_payments.amount) as total'))
+            ->groupBy('sale_payments.payment_method')
             ->get()
             ->keyBy('payment_method');
 

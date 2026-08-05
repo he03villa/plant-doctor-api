@@ -195,7 +195,7 @@ class OrderService
 
             if ($groups[$key]['latest_unit_price'] === null) {
                 $groups[$key]['latest_unit_price'] = (float) $item->unit_price;
-                $groups[$key]['suggested_sale_price'] = round((float) $item->unit_price * 1.4, 2);
+                $groups[$key]['suggested_sale_price'] = round((float) $item->unit_price * 1.4);
             }
         }
 
@@ -309,8 +309,8 @@ class OrderService
             $product = $store->storeProducts()->create([
                 'name' => mb_substr(trim($item->product_name), 0, 255),
                 'category' => 'otro',
-                'sale_price' => round((float) $item->unit_price * 1.4, 2),
-                'purchase_price' => (float) $item->unit_price,
+                'sale_price' => round((float) $item->unit_price * 1.4),
+                'purchase_price' => round((float) $item->unit_price, 2),
                 'stock_quantity' => 0,
                 'min_stock' => 0,
                 'unit' => $this->detectUnit($item->product_name),

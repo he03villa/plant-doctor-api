@@ -17,6 +17,10 @@ class SaleResource extends JsonResource
             'total' => (float) $this->total,
             'currency' => $this->currency,
             'payment_method' => $this->payment_method,
+            'payments' => $this->whenLoaded('payments', fn () => $this->payments->map(fn ($payment) => [
+                'method' => $payment->payment_method,
+                'amount' => (float) $payment->amount,
+            ])),
             'status' => $this->status,
             'notes' => $this->notes,
             'store' => $this->whenLoaded('store', fn () => [

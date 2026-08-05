@@ -8,6 +8,7 @@ use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\StoreProduct;
 use App\Traits\ApiResponseTrait;
+use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,7 +16,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
-use Exception;
 
 class SaleController extends Controller
 {
@@ -57,13 +57,13 @@ class SaleController extends Controller
     {
         try {
             $sales = Sale::forStore($store)
-                ->with('items', 'user', 'store')
+                ->with('items', 'user', 'store', 'payments')
                 ->latest()
                 ->paginate(15);
 
             return $this->successResponse(SaleResource::collection($sales));
         } catch (Exception $e) {
-            return $this->errorResponse('Error listing sales: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error listing sales: '.$e->getMessage(), 500);
         }
     }
 
@@ -107,7 +107,13 @@ class SaleController extends Controller
                 $subtotal = 0;
                 $itemsData = [];
 
-                foreach ($validated['items'] as $item) {
+                foreach ($validated['items'] as $index => $item) {
+                    if (empty($item['product_id'])) {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.product_id" => 'El producto es obligatorio para registrar la venta',
+                        ]);
+                    }
+
                     $product = StoreProduct::findOrFail($item['product_id']);
 
                     $totalPrice = $item['quantity'] * $item['unit_price'];
@@ -133,15 +139,39 @@ class SaleController extends Controller
                 $tax = 0;
                 $total = $subtotal + $tax;
 
+                $payments = $validated['payments'] ?? null;
+
+                if (empty($payments) && isset($validated['payment_method'])) {
+                    $payments = [
+                        ['method' => $validated['payment_method'], 'amount' => $total],
+                    ];
+                }
+
+                if (empty($payments)) {
+                    $payments = [
+                        ['method' => 'cash', 'amount' => $total],
+                    ];
+                }
+
+                $paidSum = array_sum(array_map(fn ($p) => (float) $p['amount'], $payments));
+
+                if (abs($paidSum - (float) $total) > 0.01) {
+                    throw ValidationException::withMessages([
+                        'payments' => 'La suma de los pagos debe ser igual al total de la venta',
+                    ]);
+                }
+
+                $primaryMethod = $payments[0]['method'];
+
                 $sale = Sale::create([
                     'store_id' => $store,
                     'user_id' => Auth::id(),
-                    'invoice_number' => 'V-' . strtoupper(Str::random(6)),
+                    'invoice_number' => 'V-'.strtoupper(Str::random(6)),
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'total' => $total,
                     'currency' => 'COP',
-                    'payment_method' => $validated['payment_method'],
+                    'payment_method' => $primaryMethod,
                     'status' => 'completed',
                     'notes' => $validated['notes'] ?? null,
                 ]);
@@ -150,7 +180,14 @@ class SaleController extends Controller
                     SaleItem::create(array_merge($itemData, ['sale_id' => $sale->id]));
                 }
 
-                return $sale->load('items', 'store', 'user');
+                foreach ($payments as $payment) {
+                    $sale->payments()->create([
+                        'amount' => $payment['amount'],
+                        'payment_method' => $payment['method'],
+                    ]);
+                }
+
+                return $sale->load('items', 'payments', 'store', 'user');
             });
 
             return $this->successResponse(
@@ -161,7 +198,7 @@ class SaleController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error al registrar la venta: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error al registrar la venta: '.$e->getMessage(), 500);
         }
     }
 
@@ -199,15 +236,15 @@ class SaleController extends Controller
     public function show(int $store, int $id): JsonResponse
     {
         try {
-            $sale = Sale::forStore($store)->with('items', 'store', 'user')->find($id);
+            $sale = Sale::forStore($store)->with('items', 'store', 'user', 'payments')->find($id);
 
-            if (!$sale) {
+            if (! $sale) {
                 return $this->notFoundResponse('Venta no encontrada');
             }
 
             return $this->successResponse(new SaleResource($sale));
         } catch (Exception $e) {
-            return $this->errorResponse('Error getting sale: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error getting sale: '.$e->getMessage(), 500);
         }
     }
 
@@ -240,7 +277,7 @@ class SaleController extends Controller
         try {
             $sale = Sale::forStore($store)->with('items')->find($id);
 
-            if (!$sale) {
+            if (! $sale) {
                 return $this->notFoundResponse('Venta no encontrada');
             }
 
@@ -257,7 +294,7 @@ class SaleController extends Controller
 
             return $this->successResponse(null, 'Venta cancelada');
         } catch (Exception $e) {
-            return $this->errorResponse('Error al cancelar la venta: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error al cancelar la venta: '.$e->getMessage(), 500);
         }
     }
 }

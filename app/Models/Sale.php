@@ -45,6 +45,11 @@ class Sale extends Model
         return $this->hasMany(SaleItem::class);
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(SalePayment::class);
+    }
+
     public function scopeForStore($query, int $storeId)
     {
         return $query->where('store_id', $storeId);

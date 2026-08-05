@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\Sale;
+use App\Models\SalePayment;
 use App\Models\Store;
 use App\Models\StoreProduct;
 
@@ -21,12 +22,13 @@ class AccountingService
             ->whereBetween('created_at', [$startDate, $endDate])
             ->sum('total');
 
-        $incomeByMethod = Sale::where('store_id', $store->id)
-            ->whereBetween('created_at', [$startDate, $endDate])
-            ->selectRaw('payment_method, SUM(total) as total')
-            ->groupBy('payment_method')
+        $incomeByMethod = SalePayment::join('sales', 'sales.id', '=', 'sale_payments.sale_id')
+            ->where('sales.store_id', $store->id)
+            ->whereBetween('sales.created_at', [$startDate, $endDate])
+            ->selectRaw('sale_payments.payment_method, SUM(sale_payments.amount) as total')
+            ->groupBy('sale_payments.payment_method')
             ->get()
-            ->map(fn($row) => [
+            ->map(fn ($row) => [
                 'method' => $row->payment_method,
                 'total' => (float) $row->total,
             ])
@@ -42,7 +44,7 @@ class AccountingService
             ->selectRaw('type, SUM(total) as total, COUNT(*) as count')
             ->groupBy('type')
             ->get()
-            ->map(fn($row) => [
+            ->map(fn ($row) => [
                 'type' => $row->type,
                 'total' => (float) $row->total,
                 'count' => (int) $row->count,
@@ -92,9 +94,9 @@ class AccountingService
         $data = $this->getProfitLoss($store, $month, $year);
 
         $lines = [];
-        $lines[] = 'Estado de Resultados - ' . $this->monthName($month) . " $year";
+        $lines[] = 'Estado de Resultados - '.$this->monthName($month)." $year";
         $lines[] = '';
-        $lines[] = 'Ingresos,' . number_format($data['income']['total'], 0, ',', '.');
+        $lines[] = 'Ingresos,'.number_format($data['income']['total'], 0, ',', '.');
 
         foreach ($data['income']['by_payment_method'] as $method) {
             $label = match ($method['method']) {
@@ -103,10 +105,10 @@ class AccountingService
                 'transfer' => 'Transferencia',
                 default => $method['method'],
             };
-            $lines[] = "  $label," . number_format($method['total'], 0, ',', '.');
+            $lines[] = "  $label,".number_format($method['total'], 0, ',', '.');
         }
 
-        $lines[] = 'Gastos,' . number_format($data['expenses']['total'], 0, ',', '.');
+        $lines[] = 'Gastos,'.number_format($data['expenses']['total'], 0, ',', '.');
 
         foreach ($data['expenses']['by_type'] as $type) {
             $label = match ($type['type']) {
@@ -115,17 +117,17 @@ class AccountingService
                 'otro' => 'Otros',
                 default => $type['type'],
             };
-            $lines[] = "  $label ({$type['count']} facturas)," . number_format($type['total'], 0, ',', '.');
+            $lines[] = "  $label ({$type['count']} facturas),".number_format($type['total'], 0, ',', '.');
         }
 
         $lines[] = '';
-        $lines[] = 'Utilidad Neta,' . number_format($data['net_profit'], 0, ',', '.');
-        $lines[] = 'Margen,' . $data['margin_percent'] . '%';
+        $lines[] = 'Utilidad Neta,'.number_format($data['net_profit'], 0, ',', '.');
+        $lines[] = 'Margen,'.$data['margin_percent'].'%';
         $lines[] = '';
         $lines[] = 'Periodo anterior';
-        $lines[] = 'Ingresos anteriores,' . number_format($data['previous_period']['income'], 0, ',', '.');
-        $lines[] = 'Gastos anteriores,' . number_format($data['previous_period']['expenses'], 0, ',', '.');
-        $lines[] = 'Utilidad anterior,' . number_format($data['previous_period']['net_profit'], 0, ',', '.');
+        $lines[] = 'Ingresos anteriores,'.number_format($data['previous_period']['income'], 0, ',', '.');
+        $lines[] = 'Gastos anteriores,'.number_format($data['previous_period']['expenses'], 0, ',', '.');
+        $lines[] = 'Utilidad anterior,'.number_format($data['previous_period']['net_profit'], 0, ',', '.');
 
         return implode("\r\n", $lines);
     }
@@ -137,23 +139,25 @@ class AccountingService
 
         $sales = Sale::where('store_id', $store->id)
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->with('items')
+            ->with('items', 'payments')
             ->orderByDesc('created_at')
             ->get();
 
         $totalAmount = $sales->sum('total');
         $totalCount = $sales->count();
 
-        $byPaymentMethod = $sales->groupBy('payment_method')
-            ->map(fn($group) => [
+        $byPaymentMethod = $sales
+            ->flatMap(fn (Sale $sale) => $sale->payments)
+            ->groupBy('payment_method')
+            ->map(fn ($group) => [
                 'method' => $group->first()->payment_method,
-                'total' => (float) $group->sum('total'),
+                'total' => (float) $group->sum('amount'),
                 'count' => $group->count(),
             ])
             ->values()
             ->toArray();
 
-        $salesList = $sales->map(fn($sale) => [
+        $salesList = $sales->map(fn ($sale) => [
             'id' => $sale->id,
             'invoice_number' => $sale->invoice_number,
             'total' => (float) $sale->total,
@@ -220,7 +224,7 @@ class AccountingService
         $inventoryValue = StoreProduct::where('store_id', $store->id)
             ->where('is_active', true)
             ->get()
-            ->sum(fn($p) => (float) $p->stock_quantity * (float) $p->purchase_price);
+            ->sum(fn ($p) => (float) $p->stock_quantity * (float) $p->purchase_price);
 
         $orders = Order::where('store_id', $store->id)
             ->whereIn('status', ['pending', 'partial'])
@@ -229,6 +233,7 @@ class AccountingService
 
         $outstandingPayables = $orders->sum(function ($order) {
             $paid = $order->payments->sum('amount');
+
             return max(0, (float) $order->total - (float) $paid);
         });
 
@@ -271,6 +276,7 @@ class AccountingService
             5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto',
             9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre',
         ];
+
         return $names[$month] ?? '';
     }
 }
