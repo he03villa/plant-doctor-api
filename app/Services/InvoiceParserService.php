@@ -208,6 +208,10 @@ FORMATO DE NÚMEROS COLOMBIANOS:
 - Si hay coma: "$165,440" = 165440 (también separador de miles en algunos contextos)
 - El OCR puede insertar espacios entre cifras (ej: "67. 699"); únelos antes de interpretar el número
 
+RESPUESTA DE NÚMEROS EN JSON:
+- En el JSON de respuesta devuelve los montos como números ENTEROS en pesos, sin separadores de miles ni punto decimal: ej. 6000 (nunca "6.000"), 165440 (nunca "165.440"), 42022 (nunca "42.022")
+- Cantidades: números enteros simples (1, 2, 3)
+
 Responde ÚNICAMENTE con JSON válido:
 {
   "invoice_number": "número de factura o null",
@@ -279,11 +283,14 @@ PROMPT;
     {
         $items = [];
         foreach ($data['items'] ?? [] as $item) {
+            $quantity = max(1, $this->coerceInt($item['quantity'] ?? 1));
+            $totalPrice = $this->coerceNumber($item['total_price'] ?? 0);
+            $unitPrice = $this->coerceNumber($item['unit_price'] ?? 0);
             $items[] = [
                 'product_name' => $item['product_name'] ?? 'Sin nombre',
-                'quantity' => (int) ($item['quantity'] ?? 1),
-                'unit_price' => (float) ($item['unit_price'] ?? 0),
-                'total_price' => (float) ($item['total_price'] ?? 0),
+                'quantity' => $quantity,
+                'unit_price' => $unitPrice,
+                'total_price' => $totalPrice,
             ];
         }
 
@@ -292,11 +299,33 @@ PROMPT;
             'invoice_date' => $this->parseDate($data['invoice_date'] ?? ''),
             'supplier_name' => $data['supplier_name'] ?? $default['supplier_name'],
             'items' => $items,
-            'subtotal' => (float) ($data['subtotal'] ?? 0),
-            'tax' => (float) ($data['tax'] ?? 0),
-            'total' => (float) ($data['total'] ?? 0),
+            'subtotal' => $this->coerceNumber($data['subtotal'] ?? 0),
+            'tax' => $this->coerceNumber($data['tax'] ?? 0),
+            'total' => $this->coerceNumber($data['total'] ?? 0),
             'currency' => strtoupper($data['currency'] ?? 'COP'),
         ];
+    }
+
+    private function coerceNumber(mixed $value): float
+    {
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+        if (is_string($value)) {
+            return $this->parseNumber($value);
+        }
+        return (float) $value;
+    }
+
+    private function coerceInt(mixed $value): int
+    {
+        if (is_int($value) || is_float($value)) {
+            return (int) $value;
+        }
+        if (is_string($value)) {
+            return (int) $this->parseNumber($value);
+        }
+        return (int) $value;
     }
 
     private function parseDate(string $dateStr): ?string

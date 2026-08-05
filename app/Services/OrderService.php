@@ -53,19 +53,24 @@ class OrderService
             'notes' => $data['notes'] ?? null,
         ]);
 
-        if (! empty($data['items']) && is_array($data['items'])) {
-            foreach ($data['items'] as $item) {
-                $order->items()->create([
-                    'product_name' => $item['product_name'],
-                    'quantity' => $item['quantity'] ?? 1,
-                    'unit_price' => $item['unit_price'] ?? 0,
-                    'total_price' => $item['total_price'] ?? 0,
-                    'matched_product_id' => $item['matched_product_id'] ?? null,
-                ]);
+        DB::transaction(function () use ($order, $store, $data) {
+            if (! empty($data['items']) && is_array($data['items'])) {
+                foreach ($data['items'] as $item) {
+                    $order->items()->create([
+                        'product_name' => $item['product_name'],
+                        'quantity' => $item['quantity'] ?? 1,
+                        'unit_price' => $item['unit_price'] ?? 0,
+                        'total_price' => $item['total_price'] ?? 0,
+                        'matched_product_id' => $item['matched_product_id'] ?? null,
+                    ]);
+                }
             }
-        }
 
-        $this->matchItemsToProducts($order, $store);
+            $order->load('items');
+
+            $this->matchItemsToProducts($order, $store);
+            $order->auto_created_count = $this->autoCreateProducts($order, $store);
+        });
 
         $order->load(['items.matchedProduct', 'payments']);
 
@@ -104,21 +109,26 @@ class OrderService
             'notes' => $data['notes'] ?? $order->notes,
         ]);
 
-        if (! empty($data['items']) && is_array($data['items'])) {
-            $order->items()->delete();
+        DB::transaction(function () use ($order, $data) {
+            if (! empty($data['items']) && is_array($data['items'])) {
+                $order->items()->delete();
 
-            foreach ($data['items'] as $item) {
-                $order->items()->create([
-                    'product_name' => $item['product_name'],
-                    'quantity' => $item['quantity'] ?? 1,
-                    'unit_price' => $item['unit_price'] ?? 0,
-                    'total_price' => $item['total_price'] ?? 0,
-                    'matched_product_id' => $item['matched_product_id'] ?? null,
-                ]);
+                foreach ($data['items'] as $item) {
+                    $order->items()->create([
+                        'product_name' => $item['product_name'],
+                        'quantity' => $item['quantity'] ?? 1,
+                        'unit_price' => $item['unit_price'] ?? 0,
+                        'total_price' => $item['total_price'] ?? 0,
+                        'matched_product_id' => $item['matched_product_id'] ?? null,
+                    ]);
+                }
             }
-        }
 
-        $this->matchItemsToProducts($order, $order->store);
+            $order->load('items');
+
+            $this->matchItemsToProducts($order, $order->store);
+            $order->auto_created_count = $this->autoCreateProducts($order, $order->store);
+        });
 
         $order->load(['items.matchedProduct', 'payments']);
 
@@ -267,6 +277,74 @@ class OrderService
                 $item->update(['matched_product_id' => $bestId]);
             }
         }
+    }
+
+    /**
+     * Create a StoreProduct automatically for each unmatched item (proveedor orders).
+     * Items whose normalized name is too short or has no letters are skipped.
+     */
+    private function autoCreateProducts(Order $order, Store $store): int
+    {
+        if ($order->type !== 'proveedor') {
+            return 0;
+        }
+
+        $createdCount = 0;
+        $createdByKey = [];
+
+        $items = $order->items()->whereNull('matched_product_id')->get();
+
+        foreach ($items as $item) {
+            $key = $this->normalizeName($item->product_name);
+
+            if ($key === '' || mb_strlen($key) < 3 || ! preg_match('/[a-z]/', $key)) {
+                continue;
+            }
+
+            if (isset($createdByKey[$key])) {
+                $item->update(['matched_product_id' => $createdByKey[$key]]);
+                continue;
+            }
+
+            $product = $store->storeProducts()->create([
+                'name' => mb_substr(trim($item->product_name), 0, 255),
+                'category' => 'otro',
+                'sale_price' => round((float) $item->unit_price * 1.4, 2),
+                'purchase_price' => (float) $item->unit_price,
+                'stock_quantity' => 0,
+                'min_stock' => 0,
+                'unit' => $this->detectUnit($item->product_name),
+            ]);
+
+            $item->update(['matched_product_id' => $product->id]);
+            $createdByKey[$key] = $product->id;
+            $createdCount++;
+        }
+
+        return $createdCount;
+    }
+
+    private function detectUnit(string $name): string
+    {
+        $name = mb_strtolower($name, 'UTF-8');
+
+        if (preg_match('/\b(kgs?|kilo|kilogramos?)\b/', $name)) {
+            return 'kg';
+        }
+
+        if (preg_match('/\b(lts?|litro|litros)\b/', $name)) {
+            return 'lt';
+        }
+
+        if (preg_match('/\b(grs?|gramo|gramos)\b/', $name)) {
+            return 'gr';
+        }
+
+        if (preg_match('/\b(unds?|unidad|unidades|ea|pza|pieza|piezas|paq|paquete)\b/', $name)) {
+            return 'und';
+        }
+
+        return 'unidad';
     }
 
     private function normalizeName(string $name): string

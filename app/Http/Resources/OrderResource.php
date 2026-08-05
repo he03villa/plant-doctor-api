@@ -37,6 +37,7 @@ class OrderResource extends JsonResource
             'type' => $this->type ?? 'proveedor',
             'notes' => $this->notes,
             'ocr_confidence' => $this->ocr_confidence ? (float) $this->ocr_confidence : null,
+            'auto_created_count' => $this->auto_created_count ?? 0,
             'amount_paid' => $amountPaid,
             'balance' => $balance,
             'payment_status' => $paymentStatus,
