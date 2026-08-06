@@ -33,6 +33,7 @@ class InvoiceParserService
             'tax' => 0,
             'total' => 0,
             'currency' => 'COP',
+            'parse_warning' => null,
         ];
 
         if (preg_match('/(?:factura|invoice|fact\.?|no\.?|#)\s*[:\-]?\s*(\d[\d\-\.]*)/i', $text, $m)) {
@@ -47,17 +48,21 @@ class InvoiceParserService
             $result['supplier_name'] = trim($m[1]);
         }
 
+        if (empty($result['supplier_name']) && preg_match('/(?:^|\n)([^\n]+?)\n\s*NIT\s*:/i', $text, $m)) {
+            $result['supplier_name'] = trim($m[1]);
+        }
+
         $result['items'] = $this->parseItems($text);
 
-        if (preg_match('/(?:subtotal|sub\s*total|base\s+gravable)\s*[:\-]?\s*\$?\s*([\d\.\,]+)/i', $text, $m)) {
+        if (preg_match('/(?:subtotal|sub\s*total|base\s+gravable)\s*[:\-]?\s*\$?\s*([\d\.\,]+(?:\s+[\d\.\,]+)*)/i', $text, $m)) {
             $result['subtotal'] = $this->parseNumber($m[1]);
         }
 
-        if (preg_match('/(?:iva|impuesto|tax|impto)\s*[:\-]?\s*\$?\s*([\d\.\,]+)/i', $text, $m)) {
+        if (preg_match('/(?:iva|impuesto|tax|impto)\s*[:\-]?\s*\$?\s*([\d\.\,]+(?:\s+[\d\.\,]+)*)/i', $text, $m)) {
             $result['tax'] = $this->parseNumber($m[1]);
         }
 
-        if (preg_match('/(?:total\s+a\s+pagar|total\s+general|total|gran\s+total)\s*[:\-]?\s*\$?\s*([\d\.\,]+)/i', $text, $m)) {
+        if (preg_match('/(?:total\s+a\s+pagar|total\s+general|total|gran\s+total)\s*[:\-]?\s*\$?\s*([\d\.\,]+(?:\s+[\d\.\,]+)*)/i', $text, $m)) {
             $result['total'] = $this->parseNumber($m[1]);
         }
 
@@ -87,7 +92,7 @@ class InvoiceParserService
                         $items[] = $item;
                     }
                 }
-                if (!empty($items)) {
+                if (! empty($items)) {
                     break;
                 }
             }
@@ -105,7 +110,7 @@ class InvoiceParserService
                 'product_name' => trim($match[3]),
                 'quantity' => (int) $match[1],
                 'unit_price' => $this->parseNumber($match[2]),
-                'total_price' => !empty($match[4]) ? $this->parseNumber($match[4]) : 0,
+                'total_price' => ! empty($match[4]) ? $this->parseNumber($match[4]) : 0,
             ];
         }
 
@@ -120,11 +125,12 @@ class InvoiceParserService
 
         if ($count === 4 && is_numeric($match[1])) {
             $name = trim($match[2]);
-            if (!preg_match('/[a-záéíóúñ]/i', $name)) {
+            if (! preg_match('/[a-záéíóúñ]/i', $name)) {
                 return null;
             }
             $quantity = max(1, (int) $match[1]);
             $totalPrice = $this->parseNumber($match[3]);
+
             return [
                 'product_name' => $name,
                 'quantity' => $quantity,
@@ -147,10 +153,13 @@ class InvoiceParserService
             'tax' => 0,
             'total' => 0,
             'currency' => 'COP',
+            'parse_warning' => null,
         ];
 
-        if (!$this->groqService->isConfigured()) {
+        if (! $this->groqService->isConfigured()) {
             Log::warning('Groq not configured for invoice parsing');
+            $default['parse_warning'] = 'El motor de IA no está configurado. Verifica los datos del recibo manualmente.';
+
             return $default;
         }
 
@@ -161,8 +170,11 @@ class InvoiceParserService
             if ($response) {
                 return $this->normalizeParsedData($response, $default);
             }
+
+            $default['parse_warning'] = 'El motor de IA no pudo procesar el recibo (límite de peticiones o error temporal). Revisa el texto e inténtalo de nuevo en un momento.';
         } catch (\Exception $e) {
             Log::error('Groq invoice parse failed', ['message' => $e->getMessage()]);
+            $default['parse_warning'] = 'El motor de IA falló al procesar el recibo. Revisa el texto e inténtalo de nuevo.';
         }
 
         return $default;
@@ -182,6 +194,20 @@ TIPOS DE DOCUMENTO SOPORTADOS:
 1. **Facturas comerciales** (productos, cantidades, precios unitarios)
 2. **Recibos de servicios públicos** (energía, agua, aseo, gas) — NO tienen productos individuales
 3. **Recibos de supermercado / almacén de cadena (POS)** (ej: Makro, PriceSmart, Éxito, Olímpica) — cada línea de producto debe extraerse como ítem
+4. **Comprobantes de entrega / notas de despacho** (ej: Ara / Jeronimo Martins) — formato similar al POS: una línea por producto con código de barras, nombre y valor. Extraer cada línea como ítem
+
+REGLAS PARA COMPROBANTES DE ENTREGA / NOTAS DE DESPACHO:
+- Encabezado típico: "Comprobante de entrega", columnas "Artículo | Descripción | Valor"
+- Cada línea: un código de barras largo (12-14 dígitos, el OCR puede insertar letras/espacios dentro) seguido del NOMBRE del producto y un VALOR numérico al final
+- Ejemplos reales de OCR ruidoso:
+  * "C7704269751574 UA SIN GAS    * SUE" → producto "UA SIN GAS", la letra final (* SUE) es basura del OCR, el valor puede estar perdido
+  * "0770425932755 HuL.A ARA 28     1.290 6" → producto "HUEVO ARA 28" (el OCR confunde letras), valor 1.290
+  * "C/TOSE12629971 x HUEVO TIPO    12.908 —" → producto "HUEVO TIPO", valor 12.908
+- Líneas de cantidad: "2 UN Y 430" → cantidad 2 del producto ANTERIOR
+- Líneas de peso: "0,417 KGM X -. 7.288" → el producto ANTERIOR se vende por peso; el valor correcto es el que aparece justo después de la línea de peso (o en la línea previa). unit_price = total_peso / cantidad_en_kg NO es útil: usa total_price = valor en pesos del producto, quantity = 1
+- "Articulos Vendidos: N" indica cuántos ítems deberías extraer
+- Excluye: "Vales Emitidos", "Vale", "Cartáo Número", "ATENDIDO POR", "AN:", números de transacción largos, eslogans de promociones, el código QR/barcode del encabezado (líneas sin sentido como "MUJ/B <UeL-Ud-jy")
+- El proveedor es el nombre legal antes del "NIT:" (ej: "Jeronimo Martins Colombia SAS")
 
 REGLAS PARA RECIBOS DE SERVICIOS PÚBLICOS:
 - El proveedor suele aparecer después de "EMPRESA:" o es el nombre de la empresa en mayúsculas (ej: "ASEO TECNICO DE LA SABANA S.A.S.", "Air-e SAS ESP", "EPM", "EMCALI")
@@ -246,29 +272,58 @@ PROMPT;
     {
         $apiKey = config('services.groq.api_key') ?? '';
         $baseUrl = config('services.groq.url') ?? 'https://api.groq.com/openai/v1';
-        $model = config('services.groq.model') ?? 'meta-llama/llama-4-scout-17b-16e-instruct';
+        $model = config('services.groq.model') ?? 'llama-3.3-70b-versatile';
 
-        $response = Http::timeout(30)
-            ->withHeaders([
-                'Authorization' => 'Bearer ' . $apiKey,
-                'Content-Type' => 'application/json',
-            ])
-            ->post("{$baseUrl}/chat/completions", [
-                'model' => $model,
-                'messages' => [
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-                'temperature' => 0.1,
-                'max_completion_tokens' => 1024,
-                'response_format' => ['type' => 'json_object'],
-            ]);
+        $payload = [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+            'temperature' => 0.1,
+            'max_completion_tokens' => 2048,
+            'response_format' => ['type' => 'json_object'],
+        ];
 
-        if ($response->successful()) {
-            $choices = $response->json('choices', []);
-            if (!empty($choices[0]['message']['content'])) {
-                return json_decode($choices[0]['message']['content'], true);
+        $retries = 0;
+        $maxRetries = 2;
+
+        do {
+            $response = Http::timeout(30)
+                ->withHeaders([
+                    'Authorization' => 'Bearer '.$apiKey,
+                    'Content-Type' => 'application/json',
+                ])
+                ->post("{$baseUrl}/chat/completions", $payload);
+
+            if ($response->successful()) {
+                $choices = $response->json('choices', []);
+                if (! empty($choices[0]['message']['content'])) {
+                    return json_decode($choices[0]['message']['content'], true);
+                }
+
+                return null;
             }
-        }
+
+            $status = $response->status();
+
+            if ($status === 429 || $status >= 500) {
+                $retries++;
+                if ($retries <= $maxRetries) {
+                    $delay = $response->header('Retry-After');
+                    $sleep = is_numeric($delay) ? (int) $delay : (int) pow(3, $retries);
+                    Log::warning('Groq rate limit hit, retrying', [
+                        'status' => $status,
+                        'attempt' => $retries,
+                        'sleep' => $sleep,
+                    ]);
+                    sleep(min($sleep, 10));
+
+                    continue;
+                }
+            }
+
+            break;
+        } while (true);
 
         Log::warning('Groq parse response not successful', [
             'status' => $response->status(),
@@ -303,6 +358,7 @@ PROMPT;
             'tax' => $this->coerceNumber($data['tax'] ?? 0),
             'total' => $this->coerceNumber($data['total'] ?? 0),
             'currency' => strtoupper($data['currency'] ?? 'COP'),
+            'parse_warning' => $default['parse_warning'],
         ];
     }
 
@@ -314,6 +370,7 @@ PROMPT;
         if (is_string($value)) {
             return $this->parseNumber($value);
         }
+
         return (float) $value;
     }
 
@@ -325,6 +382,7 @@ PROMPT;
         if (is_string($value)) {
             return (int) $this->parseNumber($value);
         }
+
         return (int) $value;
     }
 
@@ -376,6 +434,6 @@ PROMPT;
     private function hasValidItems(array $result): bool
     {
         return count($result['items']) > 0
-            || (!empty($result['supplier_name']) && $result['total'] > 0);
+            || (! empty($result['supplier_name']) && $result['total'] > 0);
     }
 }

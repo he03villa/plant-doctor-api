@@ -108,32 +108,36 @@ class SaleController extends Controller
                 $itemsData = [];
 
                 foreach ($validated['items'] as $index => $item) {
-                    if (empty($item['product_id'])) {
-                        throw ValidationException::withMessages([
-                            "items.{$index}.product_id" => 'El producto es obligatorio para registrar la venta',
-                        ]);
-                    }
+                    $product = null;
 
-                    $product = StoreProduct::findOrFail($item['product_id']);
+                    if (! empty($item['product_id'])) {
+                        $product = StoreProduct::find($item['product_id']);
+
+                        if (! $product) {
+                            throw ValidationException::withMessages([
+                                "items.{$index}.product_id" => 'El producto no existe',
+                            ]);
+                        }
+
+                        if ($product->stock_quantity < $item['quantity']) {
+                            throw ValidationException::withMessages([
+                                "items.{$item['product_id']}" => "Stock insuficiente para '{$product->name}'. Disponible: {$product->stock_quantity}",
+                            ]);
+                        }
+
+                        $product->decrement('stock_quantity', $item['quantity']);
+                    }
 
                     $totalPrice = $item['quantity'] * $item['unit_price'];
                     $subtotal += $totalPrice;
 
                     $itemsData[] = [
-                        'product_id' => $product->id,
-                        'product_name' => $product->name,
+                        'product_id' => $product?->id,
+                        'product_name' => $product?->name ?? $item['product_name'],
                         'quantity' => $item['quantity'],
                         'unit_price' => $item['unit_price'],
                         'total_price' => $totalPrice,
                     ];
-
-                    if ($product->stock_quantity < $item['quantity']) {
-                        throw ValidationException::withMessages([
-                            "items.{$item['product_id']}" => "Stock insuficiente para '{$product->name}'. Disponible: {$product->stock_quantity}",
-                        ]);
-                    }
-
-                    $product->decrement('stock_quantity', $item['quantity']);
                 }
 
                 $tax = 0;

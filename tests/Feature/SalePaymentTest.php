@@ -134,7 +134,7 @@ class SalePaymentTest extends TestCase
         $response->assertJsonPath('data.payments.0.amount', 50000);
     }
 
-    public function test_rejects_sale_without_product_id(): void
+    public function test_creates_sale_without_product_id(): void
     {
         [$user, $store] = $this->ownerWithStore();
 
@@ -151,9 +151,16 @@ class SalePaymentTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(422);
-        $response->assertJsonPath('success', false);
-        $this->assertDatabaseCount('sales', 0);
+        $response->assertCreated();
+        $response->assertJsonPath('data.total', 15000);
+        $response->assertJsonPath('data.items.0.product', null);
+
+        $this->assertDatabaseHas('sale_items', [
+            'sale_id' => $response->json('data.id'),
+            'product_id' => null,
+            'product_name' => 'Producto sin inventario',
+            'unit_price' => 15000,
+        ]);
     }
 
     public function test_rejects_sale_with_insufficient_stock(): void
