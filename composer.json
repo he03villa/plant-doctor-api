@@ -7,6 +7,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "darkaonline/l5-swagger": "^11.1",
         "laravel/framework": "^13.8",
         "laravel/octane": "^2.17",
         "laravel/reverb": "^1.10",
@@ -16,7 +17,6 @@
         "spatie/laravel-permission": "^8.3"
     },
     "require-dev": {
-        "darkaonline/l5-swagger": "^11.1",
         "fakerphp/faker": "^1.23",
         "laravel/pail": "^1.2.5",
         "laravel/pao": "^1.0.6",
