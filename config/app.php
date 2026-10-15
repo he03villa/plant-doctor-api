@@ -54,6 +54,14 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    'web_billing_url' => env('WEB_BILLING_URL', 'http://localhost:4200'),
+
+    'mobile_billing_url' => env('MOBILE_BILLING_URL', 'plantdoctor://billing'),
+
+    'web_reset_url' => env('WEB_RESET_URL', 'http://localhost:4200/reset-password'),
+
+    'mobile_reset_url' => env('MOBILE_RESET_URL', 'plantdoctor://reset-password'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

@@ -26,6 +26,9 @@ class Store extends Model
         'is_premium',
         'onboarding_completed',
         'sync_to_map',
+        'stripe_customer_id',
+        'checkout_platform',
+        'checkout_session_id',
     ];
 
     protected $casts = [
@@ -56,6 +59,11 @@ class Store extends Model
     public function subscription(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
         return $this->hasOne(Subscription::class)->latest();
+    }
+
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(Subscription::class);
     }
 
     public function getCurrentPlanAttribute(): ?Plan

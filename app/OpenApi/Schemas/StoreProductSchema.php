@@ -9,9 +9,9 @@ use OpenApi\Attributes as OA;
     type: 'object',
     properties: [
         new OA\Property(property: 'id', type: 'integer', example: 1),
-        new OA\Property(property: 'name', type: 'string', example: 'Fertilizante NPK 10-10-10'),
-        new OA\Property(property: 'category', type: 'string', nullable: true, example: 'fertilizante'),
-        new OA\Property(property: 'sku', type: 'string', nullable: true, example: 'FERT-NPK-001'),
+        new OA\Property(property: 'name', type: 'string', example: 'Arroz premium 1kg'),
+        new OA\Property(property: 'category', type: 'string', nullable: true, example: 'alimento'),
+        new OA\Property(property: 'sku', type: 'string', nullable: true, example: 'ALIM-ARR-001'),
         new OA\Property(property: 'sale_price', type: 'number', example: 25000),
         new OA\Property(property: 'purchase_price', type: 'number', nullable: true, example: 15000),
         new OA\Property(property: 'stock_quantity', type: 'integer', example: 50),

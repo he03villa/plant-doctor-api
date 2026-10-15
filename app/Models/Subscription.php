@@ -22,6 +22,8 @@ class Subscription extends Model
         'payment_method',
         'last_payment_at',
         'last_payment_amount',
+        'stripe_subscription_id',
+        'stripe_price_id',
     ];
 
     protected $casts = [

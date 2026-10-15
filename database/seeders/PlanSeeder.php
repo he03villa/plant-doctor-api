@@ -15,6 +15,8 @@ class PlanSeeder extends Seeder
                 'slug' => 'free',
                 'price_monthly' => 0,
                 'price_yearly' => null,
+                'stripe_price_id_monthly' => null,
+                'stripe_price_id_yearly' => null,
                 'features' => [
                     'max_products' => 20,
                     'max_users' => 1,
@@ -31,6 +33,8 @@ class PlanSeeder extends Seeder
                 'slug' => 'pro',
                 'price_monthly' => 9.99,
                 'price_yearly' => 99.99,
+                'stripe_price_id_monthly' => env('STRIPE_PRO_PRICE_MONTHLY'),
+                'stripe_price_id_yearly' => env('STRIPE_PRO_PRICE_YEARLY'),
                 'features' => [
                     'max_products' => -1,
                     'max_users' => 5,
@@ -47,6 +51,8 @@ class PlanSeeder extends Seeder
                 'slug' => 'business',
                 'price_monthly' => 29.99,
                 'price_yearly' => 299.99,
+                'stripe_price_id_monthly' => env('STRIPE_BUSINESS_PRICE_MONTHLY'),
+                'stripe_price_id_yearly' => env('STRIPE_BUSINESS_PRICE_YEARLY'),
                 'features' => [
                     'max_products' => -1,
                     'max_users' => -1,

@@ -15,8 +15,8 @@ class StoreProductFactory extends Factory
 
     public function definition(): array
     {
-        $categories = ['planta', 'fertilizante', 'maceta', 'sustrato', 'herramienta', 'pesticida', 'otro'];
-        $units = ['unidad', 'kg', 'litro', 'maceta', 'bandeja', 'metro'];
+        $categories = ['alimento', 'electronica', 'ropa', 'hogar', 'deportes', 'herramienta', 'otro'];
+        $units = ['unidad', 'kg', 'litro', 'metro', 'par', 'docena'];
 
         return [
             'store_id' => Store::factory(),

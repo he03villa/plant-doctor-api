@@ -19,6 +19,7 @@ class Payment extends Model
         'description',
         'receipt_url',
         'transaction_id',
+        'stripe_payment_intent_id',
     ];
 
     protected $casts = [

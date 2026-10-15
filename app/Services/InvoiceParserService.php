@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class InvoiceParserService
 {
@@ -165,19 +167,34 @@ class InvoiceParserService
 
         try {
             $prompt = $this->buildParsePrompt($rawText);
-            $response = $this->callGroq($prompt);
+            $result = $this->callGroq($prompt);
 
-            if ($response) {
-                return $this->normalizeParsedData($response, $default);
+            if ($result['data'] !== null) {
+                return $this->normalizeParsedData($result['data'], $default);
             }
 
-            $default['parse_warning'] = 'El motor de IA no pudo procesar el recibo (límite de peticiones o error temporal). Revisa el texto e inténtalo de nuevo en un momento.';
+            $default['parse_warning'] = $this->warningForReason($result['reason']);
         } catch (\Exception $e) {
             Log::error('Groq invoice parse failed', ['message' => $e->getMessage()]);
             $default['parse_warning'] = 'El motor de IA falló al procesar el recibo. Revisa el texto e inténtalo de nuevo.';
         }
 
         return $default;
+    }
+
+    private function warningForReason(string $reason): string
+    {
+        return match ($reason) {
+            'unauthorized' => 'La clave del motor de IA fue rechazada. Revisa la configuración de GROQ_API_KEY.',
+            'model_not_found' => 'El motor de IA no tiene acceso al modelo configurado. Revisa GROQ_MODEL.',
+            'rate_limited' => 'Se alcanzó el límite de peticiones del motor de IA. Inténtalo de nuevo en unos segundos.',
+            'server_error' => 'El motor de IA está temporalmente fuera de servicio. Inténtalo de nuevo en un momento.',
+            'client_error' => 'El motor de IA rechazó la solicitud. Revisa el texto del recibo e inténtalo de nuevo.',
+            'timeout' => 'El motor de IA tardó demasiado en responder. Inténtalo de nuevo.',
+            'empty_content' => 'El motor de IA devolvió una respuesta vacía. Revisa el texto del recibo e inténtalo de nuevo.',
+            'invalid_json' => 'El motor de IA devolvió una respuesta que no se pudo interpretar. Revisa el texto e inténtalo de nuevo.',
+            default => 'El motor de IA no pudo procesar el recibo. Revisa el texto e inténtalo de nuevo en un momento.',
+        };
     }
 
     private function buildParsePrompt(string $rawText): string
@@ -268,11 +285,14 @@ Si un campo no se puede determinar, usa null para strings y 0 para números.
 PROMPT;
     }
 
-    private function callGroq(string $prompt): ?array
+    /**
+     * @return array{data: ?array, reason: string}
+     */
+    private function callGroq(string $prompt): array
     {
         $apiKey = config('services.groq.api_key') ?? '';
         $baseUrl = config('services.groq.url') ?? 'https://api.groq.com/openai/v1';
-        $model = config('services.groq.model') ?? 'llama-3.3-70b-versatile';
+        $model = config('services.groq.model') ?? 'openai/gpt-oss-120b';
 
         $payload = [
             'model' => $model,
@@ -280,7 +300,7 @@ PROMPT;
                 ['role' => 'user', 'content' => $prompt],
             ],
             'temperature' => 0.1,
-            'max_completion_tokens' => 2048,
+            'max_completion_tokens' => 4096,
             'response_format' => ['type' => 'json_object'],
         ];
 
@@ -288,50 +308,106 @@ PROMPT;
         $maxRetries = 2;
 
         do {
-            $response = Http::timeout(30)
-                ->withHeaders([
-                    'Authorization' => 'Bearer '.$apiKey,
-                    'Content-Type' => 'application/json',
-                ])
-                ->post("{$baseUrl}/chat/completions", $payload);
+            try {
+                $response = Http::timeout(30)
+                    ->withHeaders([
+                        'Authorization' => 'Bearer '.$apiKey,
+                        'Content-Type' => 'application/json',
+                    ])
+                    ->post("{$baseUrl}/chat/completions", $payload);
+            } catch (ConnectionException $e) {
+                Log::error('Groq parse connection failed', [
+                    'message' => $e->getMessage(),
+                    'model' => $model,
+                ]);
+
+                return ['data' => null, 'reason' => 'timeout'];
+            }
 
             if ($response->successful()) {
-                $choices = $response->json('choices', []);
-                if (! empty($choices[0]['message']['content'])) {
-                    return json_decode($choices[0]['message']['content'], true);
+                $content = $response->json('choices.0.message.content');
+
+                if (empty($content)) {
+                    $finishReason = $response->json('choices.0.finish_reason');
+                    Log::warning('Groq parse returned empty content', [
+                        'model' => $model,
+                        'finish_reason' => $finishReason,
+                    ]);
+
+                    return ['data' => null, 'reason' => 'empty_content'];
                 }
 
-                return null;
+                $decoded = json_decode($content, true);
+
+                if (! is_array($decoded)) {
+                    Log::warning('Groq parse returned non-JSON content', [
+                        'model' => $model,
+                        'finish_reason' => $response->json('choices.0.finish_reason'),
+                        'preview' => Str::limit($content, 300),
+                    ]);
+
+                    return ['data' => null, 'reason' => 'invalid_json'];
+                }
+
+                return ['data' => $decoded, 'reason' => 'ok'];
             }
 
             $status = $response->status();
+
+            if ($status === 401 || $status === 403) {
+                Log::error('Groq parse unauthorized', [
+                    'status' => $status,
+                    'model' => $model,
+                    'body' => $response->json(),
+                ]);
+
+                return ['data' => null, 'reason' => 'unauthorized'];
+            }
+
+            if ($status === 404) {
+                Log::error('Groq parse model not found', [
+                    'status' => $status,
+                    'model' => $model,
+                    'body' => $response->json(),
+                ]);
+
+                return ['data' => null, 'reason' => 'model_not_found'];
+            }
 
             if ($status === 429 || $status >= 500) {
                 $retries++;
                 if ($retries <= $maxRetries) {
                     $delay = $response->header('Retry-After');
                     $sleep = is_numeric($delay) ? (int) $delay : (int) pow(3, $retries);
-                    Log::warning('Groq rate limit hit, retrying', [
+                    Log::warning('Groq parse retrying', [
                         'status' => $status,
                         'attempt' => $retries,
                         'sleep' => $sleep,
+                        'model' => $model,
                     ]);
                     sleep(min($sleep, 10));
 
                     continue;
                 }
+
+                Log::warning('Groq parse retries exhausted', [
+                    'status' => $status,
+                    'attempts' => $retries,
+                    'model' => $model,
+                    'body' => $response->json(),
+                ]);
+
+                return ['data' => null, 'reason' => $status === 429 ? 'rate_limited' : 'server_error'];
             }
 
-            break;
+            Log::warning('Groq parse request rejected', [
+                'status' => $status,
+                'body' => $response->json(),
+                'model' => $model,
+            ]);
+
+            return ['data' => null, 'reason' => 'client_error'];
         } while (true);
-
-        Log::warning('Groq parse response not successful', [
-            'status' => $response->status(),
-            'body' => $response->json(),
-            'model' => $model,
-        ]);
-
-        return null;
     }
 
     private function normalizeParsedData(array $data, array $default): array

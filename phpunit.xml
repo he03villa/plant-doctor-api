@@ -26,6 +26,8 @@
         <env name="DB_CONNECTION" value="pgsql"/>
         <env name="DB_DATABASE" value="plant_doctor_test"/>
         <env name="DB_URL" value=""/>
+        <env name="GROQ_API_KEY" value=""/>
+        <env name="GROQ_MODEL" value="openai/gpt-oss-120b"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

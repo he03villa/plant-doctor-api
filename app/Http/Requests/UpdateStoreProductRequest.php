@@ -17,7 +17,7 @@ class UpdateStoreProductRequest extends FormRequest
             'name' => 'nullable|string|max:255',
             'sale_price' => 'nullable|numeric|min:0',
             'stock_quantity' => 'nullable|integer|min:0',
-            'category' => 'nullable|string|in:planta,fertilizante,maceta,sustrato,herramienta,pesticida,otro',
+            'category' => 'nullable|string|in:alimento,electronica,ropa,hogar,deportes,herramienta,otro',
             'sku' => 'nullable|string|max:100',
             'purchase_price' => 'nullable|numeric|min:0',
             'min_stock' => 'nullable|integer|min:0',

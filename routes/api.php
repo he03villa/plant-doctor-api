@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DiagnosisController;
 use App\Http\Controllers\DiseaseController;
@@ -15,8 +16,8 @@ use App\Http\Controllers\SaleController;
 use App\Http\Controllers\StoreController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\UserController;
-use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\ViveroController;
+use App\Http\Controllers\WebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -24,9 +25,15 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+// Stripe Webhook (no auth — Stripe signs the request)
+Route::post('webhooks/stripe', [WebhookController::class, 'handleWebhook']);
+
 Route::group(['prefix' => 'auth'], function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:10,1');
+    Route::post('/change-password', [AuthController::class, 'changePassword'])->middleware('auth:api');
     Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:api');
     Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me'])->middleware('auth:api');
@@ -71,6 +78,7 @@ Route::middleware('auth:api')->group(function () {
     // Subscriptions
     Route::get('subscriptions/current', [SubscriptionController::class, 'current']);
     Route::post('subscriptions', [SubscriptionController::class, 'store']);
+    Route::post('subscriptions/portal', [SubscriptionController::class, 'portal']);
     Route::patch('subscriptions/{id}', [SubscriptionController::class, 'update']);
     Route::delete('subscriptions/{id}', [SubscriptionController::class, 'cancel']);
 

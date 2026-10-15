@@ -52,6 +52,7 @@ Services:
 - All custom business exceptions return HTTP 400.
 - Dual-auth: `GET /api/user` uses Sanctum (`auth:sanctum`); everything else uses JWT (`auth:api`).
 - **Spatie Laravel Permission** for roles and permissions (admin, expert, user).
+- **Stripe** for subscription payments (Checkout hosted page, webhooks, Customer Portal).
 - **Swagger/OpenAPI** via `l5-swagger` (PHP 8 attributes). Annotations in `app/OpenApi/Spec.php` and controller docblocks. Generated docs at `storage/api-docs/api-docs.json`. UI at `/api/documentation`.
 
 ## Directory structure
@@ -59,7 +60,7 @@ Services:
 ```
 .
 ├── app/
-│   ├── Console/Commands/     # SyncDiseasesFromPerenual
+│   ├── Console/Commands/     # SyncDiseasesFromPerenual, SetupStripePlans
 │   ├── Events/               # DiagnosisCreated, PlantUpdated, DiseaseCatalogUpdated
 │   ├── Exceptions/           # CustomExceptions + Handler
 │   ├── Http/
@@ -71,7 +72,7 @@ Services:
 │   ├── Observers/            # PlantObserver, DiseaseObserver
 │   ├── OpenApi/              # Spec.php, Schemas/ (Swagger annotations)
 │   ├── Providers/            # AppServiceProvider
-│   ├── Services/             # PlantService, DiseaseService, DiagnosisService, GeolocationService, CloudinaryService, PlantNetService, PerenualService
+│   ├── Services/             # PlantService, DiseaseService, DiagnosisService, GeolocationService, CloudinaryService, PlantNetService, PerenualService, StripeService, SubscriptionService
 │   ├── Traits/               # ApiResponseTrait, HasPublication
 │   └── Utils/
 ├── config/                   # JWT, Permission, Services, etc.
@@ -108,6 +109,7 @@ Services:
 | `APP php artisan migrate` | Run migrations |
 | `APP php artisan db:seed` | Run seeders |
 | `APP php artisan sync:diseases-from-perenual` | Sync diseases from Perenual API |
+| `APP php artisan stripe:setup-plans` | Create Stripe Products/Prices and sync to DB |
 | `APP php artisan make:migration create_xxx_table` | Create migration |
 | `APP php artisan make:model Xxx -m` | Model + migration |
 | `APP php artisan make:controller XxxController` | Controller |
@@ -168,6 +170,63 @@ APP php artisan permission:cache-clear
 - Reverse geocode: lat/lon → country/state/city
 - Cached 1 day
 - Service: `app/Services/GeolocationService.php`
+
+### Stripe (Subscription Payments)
+- Package: `stripe/stripe-php`
+- Config: `config/services.php` → `stripe` (secret, webhook_secret, currency)
+- Service: `app/Services/StripeService.php` — Customer, Checkout, Portal, Webhooks
+- Service: `app/Services/SubscriptionService.php` — business logic for subscriptions
+- Controller: `app/Http/Controllers\SubscriptionController` — API endpoints
+- Controller: `app/Http/Controllers\WebhookController` — receives Stripe events
+- Plans: Free ($0), Pro ($9.99/mo, $99.99/yr), Business ($29.99/mo, $299.99/yr)
+- Checkout flow: `POST /api/subscriptions` → returns `checkout_url` → user pays on Stripe → webhook activates subscription
+- Portal: `POST /api/subscriptions/portal` → returns Stripe Customer Portal URL
+- Webhook endpoint: `POST /api/webhooks/stripe` (no auth, verified by Stripe signature)
+- Webhook events handled: `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`
+- Setup command: `APP php artisan stripe:setup-plans` — creates Products/Prices in Stripe and syncs price IDs to `.env` + DB
+
+#### Stripe Setup Steps
+
+1. Configure keys in `.env`:
+   - `STRIPE_SECRET=sk_live_...` (live mode for production, `sk_test_...` for dev)
+   - `STRIPE_WEBHOOK_SECRET=whsec_...` (from Stripe Dashboard webhook config)
+   - `STRIPE_CURRENCY=usd`
+
+2. Run: `APP php artisan stripe:setup-plans`
+   - Creates 2 Products (Pro Plan, Business Plan) in Stripe
+   - Creates 4 Prices (Pro monthly/yearly, Business monthly/yearly)
+   - Updates .env with STRIPE_*_PRICE_* variables
+   - Runs PlanSeeder to sync price IDs to DB
+
+3. Run: `APP php artisan migrate`
+   - Adds stripe columns to stores, subscriptions, payments, plans
+
+4. Configure webhook in Stripe Dashboard:
+   - Go to https://dashboard.stripe.com/webhooks
+   - Click "Add endpoint"
+   - URL: `https://tudominio.com/api/webhooks/stripe`
+   - Select events:
+     - `checkout.session.completed`
+     - `invoice.paid`
+     - `invoice.payment_failed`
+     - `customer.subscription.updated`
+     - `customer.subscription.deleted`
+   - Copy the "Signing secret" → set as `STRIPE_WEBHOOK_SECRET` in `.env`
+
+5. Test webhook locally with Stripe CLI:
+   - Install: `brew install stripe/stripe-cli/stripe`
+   - Login: `stripe login`
+   - Forward: `stripe listen --forward-to https://tudominio.com/api/webhooks/stripe`
+   - Trigger test: `stripe trigger checkout.session.completed`
+   - Check logs in Laravel
+
+6. Verify in production:
+   - `POST /api/subscriptions` → returns `checkout_url`
+   - Complete checkout on Stripe → webhook fires → subscription activated
+   - `GET /api/subscriptions/current` → returns active subscription
+   - `POST /api/subscriptions/portal` → returns Customer Portal URL
+   - Stripe Dashboard → Customers shows store customer
+   - Stripe Dashboard → Webhooks → shows successful deliveries
 
 ## Swagger / OpenAPI
 

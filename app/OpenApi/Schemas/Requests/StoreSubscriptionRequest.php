@@ -11,6 +11,7 @@ use OpenApi\Attributes as OA;
     properties: [
         new OA\Property(property: 'plan_id', type: 'integer', example: 2, description: 'ID of the plan to subscribe to'),
         new OA\Property(property: 'billing_cycle', type: 'string', enum: ['monthly', 'yearly'], example: 'monthly', description: 'Billing cycle (default: monthly)'),
+        new OA\Property(property: 'platform', type: 'string', enum: ['web', 'mobile'], example: 'web', description: 'Platform where checkout is initiated (default: web)', nullable: true),
     ]
 )]
 class StoreSubscriptionRequest

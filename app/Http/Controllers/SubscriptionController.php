@@ -4,22 +4,24 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreSubscriptionRequest;
 use App\Http\Resources\SubscriptionResource;
-use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
+use App\Services\SubscriptionService;
 use App\Traits\ApiResponseTrait;
 use App\Traits\StoreScoped;
+use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
-use Exception;
 
 class SubscriptionController extends Controller
 {
     use ApiResponseTrait, StoreScoped;
+
+    public function __construct(
+        private SubscriptionService $subscriptionService
+    ) {}
 
     #[OA\Get(
         path: '/api/subscriptions/current',
@@ -46,21 +48,21 @@ class SubscriptionController extends Controller
     {
         try {
             $store = $this->getStoreForUser($request->user());
-            $subscription = $store->subscription()->with('plan')->first();
+            $subscription = $this->subscriptionService->getCurrentSubscription($store);
 
-            if (!$subscription) {
+            if (! $subscription) {
                 return $this->notFoundResponse('No subscription found for this store');
             }
 
             return $this->successResponse(new SubscriptionResource($subscription));
         } catch (Exception $e) {
-            return $this->errorResponse('Error getting subscription: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error getting subscription: '.$e->getMessage(), 500);
         }
     }
 
     #[OA\Post(
         path: '/api/subscriptions',
-        summary: 'Create or change subscription',
+        summary: 'Create subscription via Stripe Checkout',
         tags: ['Subscriptions'],
         security: [['jwt' => []]],
         requestBody: new OA\RequestBody(
@@ -68,13 +70,17 @@ class SubscriptionController extends Controller
             content: new OA\JsonContent(ref: '#/components/schemas/StoreSubscriptionRequest')
         ),
         responses: [
-            new OA\Response(response: 200, description: 'Subscription created/updated',
+            new OA\Response(response: 200, description: 'Checkout URL returned',
                 content: new OA\JsonContent(
                     type: 'object',
                     properties: [
                         new OA\Property(property: 'success', type: 'boolean', example: true),
-                        new OA\Property(property: 'message', type: 'string', example: 'Suscripción actualizada exitosamente.'),
-                        new OA\Property(property: 'data', ref: '#/components/schemas/Subscription'),
+                        new OA\Property(property: 'message', type: 'string', example: 'Checkout session created'),
+                        new OA\Property(property: 'data', type: 'object',
+                            properties: [
+                                new OA\Property(property: 'checkout_url', type: 'string', format: 'uri'),
+                            ]
+                        ),
                     ]
                 )
             ),
@@ -95,60 +101,55 @@ class SubscriptionController extends Controller
 
             $plan = Plan::findOrFail($validated['plan_id']);
             $billingCycle = $validated['billing_cycle'] ?? 'monthly';
-            $isYearly = $billingCycle === 'yearly';
+            $platform = $validated['platform'] ?? 'web';
 
-            $currentSubscription = $store->subscription()
-                ->whereIn('status', ['active', 'trialing'])
-                ->first();
-
-            $result = DB::transaction(function () use ($store, $plan, $isYearly, $currentSubscription) {
-                if ($currentSubscription) {
-                    $currentSubscription->update([
-                        'status' => 'cancelled',
-                        'cancelled_at' => now(),
-                    ]);
-                }
-
-                $periodStart = now();
-                $periodEnd = $isYearly ? now()->addYear() : now()->addMonth();
-
-                $subscription = Subscription::create([
-                    'store_id' => $store->id,
-                    'plan_id' => $plan->id,
-                    'status' => 'active',
-                    'current_period_start' => $periodStart,
-                    'current_period_end' => $periodEnd,
-                    'payment_method' => 'manual',
-                    'last_payment_at' => now(),
-                    'last_payment_amount' => $isYearly ? $plan->price_yearly : $plan->price_monthly,
-                ]);
-
-                Payment::create([
-                    'subscription_id' => $subscription->id,
-                    'store_id' => $store->id,
-                    'amount' => $isYearly ? $plan->price_yearly : $plan->price_monthly,
-                    'currency' => 'USD',
-                    'status' => 'succeeded',
-                    'description' => 'Plan ' . $plan->name . ' (' . ($isYearly ? 'yearly' : 'monthly') . ')',
-                    'transaction_id' => 'manual_' . uniqid(),
-                ]);
-
-                $store->update([
-                    'is_premium' => $plan->slug !== 'free',
-                ]);
-
-                return $subscription->load('plan');
-            });
+            $checkoutUrl = $this->subscriptionService->createCheckout($store, $plan, $billingCycle, $platform);
 
             return $this->successResponse(
-                new SubscriptionResource($result),
-                $currentSubscription ? 'Suscripción actualizada exitosamente.' : 'Suscripción creada exitosamente.',
-                $currentSubscription ? 200 : 201
+                ['checkout_url' => $checkoutUrl],
+                'Checkout session created.',
+                201
             );
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error creating subscription: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error creating subscription: '.$e->getMessage(), 500);
+        }
+    }
+
+    #[OA\Post(
+        path: '/api/subscriptions/portal',
+        summary: 'Get Stripe Customer Portal URL',
+        tags: ['Subscriptions'],
+        security: [['jwt' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Portal URL returned',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'data', type: 'object',
+                            properties: [
+                                new OA\Property(property: 'portal_url', type: 'string', format: 'uri'),
+                            ]
+                        ),
+                    ]
+                )
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+        ]
+    )]
+    public function portal(Request $request): JsonResponse
+    {
+        try {
+            $store = $this->getStoreForUser($request->user());
+            $portalUrl = $this->subscriptionService->getPortalUrl($store);
+
+            return $this->successResponse(['portal_url' => $portalUrl]);
+        } catch (Exception $e) {
+            return $this->errorResponse('Error creating portal session: '.$e->getMessage(), 500);
         }
     }
 
@@ -196,48 +197,24 @@ class SubscriptionController extends Controller
                 ->where('store_id', $store->id)
                 ->first();
 
-            if (!$subscription) {
+            if (! $subscription) {
                 return $this->notFoundResponse('Subscription not found');
             }
 
             $validated = $request->validated();
             $plan = Plan::findOrFail($validated['plan_id']);
             $billingCycle = $validated['billing_cycle'] ?? 'monthly';
-            $isYearly = $billingCycle === 'yearly';
 
-            $subscription->update([
-                'plan_id' => $plan->id,
-                'status' => 'active',
-                'current_period_start' => now(),
-                'current_period_end' => $isYearly ? now()->addYear() : now()->addMonth(),
-                'payment_method' => 'manual',
-                'last_payment_at' => now(),
-                'last_payment_amount' => $isYearly ? $plan->price_yearly : $plan->price_monthly,
-                'cancelled_at' => null,
-            ]);
-
-            Payment::create([
-                'subscription_id' => $subscription->id,
-                'store_id' => $store->id,
-                'amount' => $isYearly ? $plan->price_yearly : $plan->price_monthly,
-                'currency' => 'USD',
-                'status' => 'succeeded',
-                'description' => 'Plan change to ' . $plan->name . ' (' . ($isYearly ? 'yearly' : 'monthly') . ')',
-                'transaction_id' => 'manual_' . uniqid(),
-            ]);
-
-            $store->update([
-                'is_premium' => $plan->slug !== 'free',
-            ]);
+            $result = $this->subscriptionService->changePlan($store, $subscription, $plan, $billingCycle);
 
             return $this->successResponse(
-                new SubscriptionResource($subscription->load('plan')),
+                new SubscriptionResource($result),
                 'Suscripción actualizada exitosamente.'
             );
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (Exception $e) {
-            return $this->errorResponse('Error updating subscription: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error updating subscription: '.$e->getMessage(), 500);
         }
     }
 
@@ -276,39 +253,18 @@ class SubscriptionController extends Controller
                 ->whereIn('status', ['active', 'trialing'])
                 ->first();
 
-            if (!$subscription) {
+            if (! $subscription) {
                 return $this->notFoundResponse('Active subscription not found');
             }
 
-            $freePlan = Plan::where('slug', 'free')->first();
-
-            DB::transaction(function () use ($subscription, $store, $freePlan) {
-                $subscription->update([
-                    'status' => 'cancelled',
-                    'cancelled_at' => now(),
-                    'current_period_end' => now(),
-                ]);
-
-                // Downgrade to free plan
-                if ($freePlan) {
-                    Subscription::create([
-                        'store_id' => $store->id,
-                        'plan_id' => $freePlan->id,
-                        'status' => 'active',
-                        'current_period_start' => now(),
-                        'current_period_end' => now()->addCentury(),
-                    ]);
-                }
-
-                $store->update(['is_premium' => false]);
-            });
+            $result = $this->subscriptionService->cancel($store, $subscription);
 
             return $this->successResponse(
-                new SubscriptionResource($subscription->fresh()->load('plan')),
+                new SubscriptionResource($result),
                 'Suscripción cancelada. Has sido movido al plan Free.'
             );
         } catch (Exception $e) {
-            return $this->errorResponse('Error cancelling subscription: ' . $e->getMessage(), 500);
+            return $this->errorResponse('Error cancelling subscription: '.$e->getMessage(), 500);
         }
     }
 }

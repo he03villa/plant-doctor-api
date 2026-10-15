@@ -24,6 +24,7 @@ class SubscriptionResource extends JsonResource
             'days_until_renewal' => $this->days_until_renewal,
             'is_trial' => $this->is_trial,
             'is_active' => $this->status === 'active',
+            'has_stripe' => ! empty($this->stripe_subscription_id),
         ];
     }
 }

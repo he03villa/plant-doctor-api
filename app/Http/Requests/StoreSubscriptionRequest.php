@@ -16,6 +16,7 @@ class StoreSubscriptionRequest extends FormRequest
         return [
             'plan_id' => 'required|exists:plans,id',
             'billing_cycle' => 'nullable|in:monthly,yearly',
+            'platform' => 'nullable|in:web,mobile',
         ];
     }
 }

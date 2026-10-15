@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ChangePasswordRequest;
+use App\Http\Requests\ForgotPasswordRequest;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
+use App\Http\Requests\ResetPasswordRequest;
 use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Resources\AuthResource;
 use App\Http\Resources\TokenResource;
@@ -13,6 +16,7 @@ use App\Services\AuthService;
 use App\Traits\ApiResponseTrait;
 use Exception;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
 
@@ -325,5 +329,156 @@ class AuthController extends Controller
         } catch (Exception $e) {
             return $this->errorResponse('Error updating profile: '.$e->getMessage(), 500);
         }
+    }
+
+    /**
+     * POST /api/auth/forgot-password
+     * Request a password reset link
+     */
+    #[OA\Post(
+        path: '/api/auth/forgot-password',
+        summary: 'Request a password reset link',
+        description: 'Sends a password reset link to the given email. Always returns 200 to avoid user enumeration.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(ref: '#/components/schemas/ForgotPasswordRequest')
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Reset link sent (if the email exists)',
+                content: new OA\JsonContent(ref: '#/components/schemas/SuccessResponse')
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
+            new OA\Response(response: 429, description: 'Too many requests',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+        ]
+    )]
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    {
+        try {
+            $this->authService->forgotPassword($request->validated());
+
+            return $this->successResponse(
+                null,
+                'If that email address is in our system, we have sent a password reset link'
+            );
+        } catch (ValidationException $e) {
+            return $this->validationErrorResponse($e->errors());
+        } catch (Exception $e) {
+            return $this->errorResponse('Error sending password reset link: '.$e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * POST /api/auth/reset-password
+     * Reset password using a token
+     */
+    #[OA\Post(
+        path: '/api/auth/reset-password',
+        summary: 'Reset password with token',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(ref: '#/components/schemas/ResetPasswordRequest')
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Password reset successfully',
+                content: new OA\JsonContent(ref: '#/components/schemas/SuccessResponse')
+            ),
+            new OA\Response(response: 400, description: 'Invalid or expired token',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
+            new OA\Response(response: 429, description: 'Too many requests',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+        ]
+    )]
+    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    {
+        try {
+            $status = $this->authService->resetPassword($request->validated());
+
+            if ($status === Password::PASSWORD_RESET) {
+                return $this->successResponse(null, 'Password has been reset successfully');
+            }
+
+            return $this->errorResponse($this->resetPasswordErrorMessage($status), 400);
+        } catch (ValidationException $e) {
+            return $this->validationErrorResponse($e->errors());
+        } catch (Exception $e) {
+            return $this->errorResponse('Error resetting password: '.$e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * POST /api/auth/change-password
+     * Change authenticated user password
+     */
+    #[OA\Post(
+        path: '/api/auth/change-password',
+        summary: 'Change authenticated user password',
+        description: 'Invalidates the current JWT token and returns a new one.',
+        tags: ['Auth'],
+        security: [['jwt' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(ref: '#/components/schemas/ChangePasswordRequest')
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Password changed, new token issued',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/TokenResponse'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+            new OA\Response(response: 422, description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')
+            ),
+            new OA\Response(response: 500, description: 'Server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')
+            ),
+        ]
+    )]
+    public function changePassword(ChangePasswordRequest $request): JsonResponse
+    {
+        try {
+            $result = $this->authService->changePassword($request->validated());
+
+            return $this->successResponse(
+                new TokenResource($result),
+                'Password changed successfully'
+            );
+        } catch (ValidationException $e) {
+            return $this->validationErrorResponse($e->errors());
+        } catch (Exception $e) {
+            return $this->errorResponse('Error changing password: '.$e->getMessage(), 500);
+        }
+    }
+
+    private function resetPasswordErrorMessage(string $status): string
+    {
+        return match ($status) {
+            Password::RESET_THROTTLED => 'Too many reset attempts, please try again later',
+            default => 'Invalid or expired password reset token',
+        };
     }
 }

@@ -3,8 +3,11 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Notifications\ResetPasswordNotification;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 class AuthService
@@ -72,5 +75,42 @@ class AuthService
         $user->update($data);
 
         return $user;
+    }
+
+    public function forgotPassword(array $data): void
+    {
+        $platform = $data['platform'] ?? 'web';
+
+        Password::broker()->sendResetLink(
+            ['email' => $data['email']],
+            function ($user, $token) use ($platform) {
+                $user->notify(new ResetPasswordNotification($token, $platform));
+            }
+        );
+    }
+
+    public function resetPassword(array $data): string
+    {
+        return Password::broker()->reset($data, function ($user, $password) {
+            $user->update(['password' => $password]);
+        });
+    }
+
+    public function changePassword(array $data): array
+    {
+        $user = Auth::user();
+
+        $user->update(['password' => $data['password']]);
+
+        DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+
+        JWTAuth::invalidate(JWTAuth::getToken());
+
+        $token = JWTAuth::fromUser($user);
+
+        return [
+            'user' => $user,
+            'token' => $token,
+        ];
     }
 }
