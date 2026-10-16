@@ -1,6 +1,13 @@
 <?php
 
 use App\Http\Controllers\AccountingController;
+use App\Http\Controllers\Admin\AdminPaymentController;
+use App\Http\Controllers\Admin\AdminPlanController;
+use App\Http\Controllers\Admin\AdminProductController;
+use App\Http\Controllers\Admin\AdminSaleController;
+use App\Http\Controllers\Admin\AdminStatsController;
+use App\Http\Controllers\Admin\AdminStoreController;
+use App\Http\Controllers\Admin\AdminSubscriptionController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DiagnosisController;
 use App\Http\Controllers\DiseaseController;
@@ -108,8 +115,13 @@ Route::middleware('auth:api')->group(function () {
         Route::apiResource('stores/{store}/sales', SaleController::class)->only(['index', 'store', 'show', 'destroy']);
     });
 
+    // Admin — Diagnoses (super_admin or expert review queue)
+    Route::prefix('admin')->middleware(['role:super_admin|expert'])->group(function () {
+        Route::get('diagnoses', [DiagnosisController::class, 'adminIndex']);
+    });
+
     // Admin — Roles & Permissions
-    Route::prefix('admin')->group(function () {
+    Route::prefix('admin')->middleware(['role:super_admin'])->group(function () {
         Route::apiResource('roles', RoleController::class);
         Route::get('permissions', [PermissionController::class, 'index']);
         Route::post('users/{id}/roles', [RoleController::class, 'assignToUser']);
@@ -119,7 +131,35 @@ Route::middleware('auth:api')->group(function () {
         Route::apiResource('users', UserController::class);
         Route::patch('users/{id}/toggle', [UserController::class, 'toggleActive']);
 
-        // Admin — Diagnoses (for expert review)
-        Route::get('diagnoses', [DiagnosisController::class, 'adminIndex']);
+        // Admin — Stores
+        Route::get('stores', [AdminStoreController::class, 'index']);
+        Route::get('stores/{id}', [AdminStoreController::class, 'show']);
+        Route::delete('stores/{id}', [AdminStoreController::class, 'destroy']);
+        Route::patch('stores/{id}/toggle', [AdminStoreController::class, 'toggleActive']);
+
+        // Admin — Products (global)
+        Route::get('products', [AdminProductController::class, 'index']);
+        Route::get('products/{id}', [AdminProductController::class, 'show']);
+        Route::patch('products/{id}/toggle', [AdminProductController::class, 'toggleVisibility']);
+        Route::delete('products/{id}', [AdminProductController::class, 'destroy']);
+
+        // Admin — Sales (global)
+        Route::get('sales', [AdminSaleController::class, 'index']);
+        Route::get('sales/{id}', [AdminSaleController::class, 'show']);
+        Route::delete('sales/{id}', [AdminSaleController::class, 'destroy']);
+
+        // Admin — Plans
+        Route::apiResource('plans', AdminPlanController::class);
+
+        // Admin — Subscriptions
+        Route::get('subscriptions', [AdminSubscriptionController::class, 'index']);
+        Route::get('subscriptions/{id}', [AdminSubscriptionController::class, 'show']);
+        Route::patch('subscriptions/{id}', [AdminSubscriptionController::class, 'update']);
+
+        // Admin — Payments
+        Route::get('payments', [AdminPaymentController::class, 'index']);
+
+        // Admin — Stats
+        Route::get('stats', [AdminStatsController::class, 'index']);
     });
 });

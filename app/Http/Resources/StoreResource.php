@@ -26,6 +26,8 @@ class StoreResource extends JsonResource
             'sync_to_map' => $this->sync_to_map,
             'products_count' => $this->whenCounted('storeProducts'),
             'storeProducts' => StoreProductResource::collection($this->whenLoaded('storeProducts')),
+            'current_plan' => $this->whenLoaded('subscription', fn () => $this->subscription?->plan ? new PlanResource($this->subscription->plan) : null),
+            'subscription_status' => $this->whenLoaded('subscription', fn () => $this->subscription?->status),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

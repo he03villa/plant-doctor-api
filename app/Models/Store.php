@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Store extends Model
 {
@@ -31,10 +32,13 @@ class Store extends Model
         'checkout_session_id',
     ];
 
+    protected $hidden = [
+        'location',
+    ];
+
     protected $casts = [
         'latitude' => 'float',
         'longitude' => 'float',
-        'location' => 'point',
         'is_active' => 'boolean',
         'is_premium' => 'boolean',
         'onboarding_completed' => 'boolean',
@@ -56,7 +60,12 @@ class Store extends Model
         return $this->hasMany(Order::class);
     }
 
-    public function subscription(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function sales(): HasMany
+    {
+        return $this->hasMany(Sale::class);
+    }
+
+    public function subscription(): HasOne
     {
         return $this->hasOne(Subscription::class)->latest();
     }

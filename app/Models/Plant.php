@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use App\Services\FileStorageService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Plant extends Model
 {
@@ -30,10 +30,13 @@ class Plant extends Model
         'status',
     ];
 
+    protected $hidden = [
+        'location',
+    ];
+
     protected $casts = [
         'latitude' => 'float',
         'longitude' => 'float',
-        'location' => 'point',
     ];
 
     public function user(): BelongsTo
@@ -48,11 +51,11 @@ class Plant extends Model
 
     public function getImageUrlAttribute(): ?string
     {
-        if (!$this->image_path) {
+        if (! $this->image_path) {
             return null;
         }
 
-        return app(\App\Services\FileStorageService::class)->getUrl($this->image_path);
+        return app(FileStorageService::class)->getUrl($this->image_path);
     }
 
     public function publication()

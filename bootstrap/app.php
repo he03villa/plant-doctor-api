@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'check.product.limit' => \App\Http\Middleware\CheckProductLimit::class,
             'check.store.limit' => \App\Http\Middleware\CheckStoreLimit::class,
             'feature' => \App\Http\Middleware\EnsureFeature::class,
+            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

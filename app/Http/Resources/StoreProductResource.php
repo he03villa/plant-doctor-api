@@ -24,6 +24,10 @@ class StoreProductResource extends JsonResource
             'image_url' => $this->image_url,
             'is_active' => $this->is_active,
             'is_visible_on_map' => $this->is_visible_on_map,
+            'store' => $this->whenLoaded('store', fn () => [
+                'id' => $this->store->id,
+                'name' => $this->store->name,
+            ]),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

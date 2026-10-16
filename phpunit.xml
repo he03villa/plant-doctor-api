@@ -29,6 +29,7 @@
         <env name="GROQ_API_KEY" value=""/>
         <env name="GROQ_MODEL" value="openai/gpt-oss-120b"/>
         <env name="MAIL_MAILER" value="array"/>
+        <env name="MOBILE_RESET_URL" value="plantdoctor://reset-password"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
