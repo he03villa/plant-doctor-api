@@ -227,4 +227,132 @@ class AdminPanelTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonStructure(['data' => ['total_stores', 'active_stores', 'plan_distribution']]);
     }
+
+    public function test_assigning_a_paid_plan_creates_active_subscription_and_marks_store_premium(): void
+    {
+        $plan = $this->createPlan();
+        $store = Store::factory()->create(['is_premium' => false]);
+        $admin = $this->userWithRole('super_admin');
+
+        $this->actingAs($admin, 'api')
+            ->postJson('/api/admin/stores/'.$store->id.'/subscription', [
+                'plan_id' => $plan->id,
+                'billing_cycle' => 'monthly',
+                'status' => 'active',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'active')
+            ->assertJsonPath('data.plan.id', $plan->id);
+
+        $this->assertDatabaseHas('subscriptions', [
+            'store_id' => $store->id,
+            'plan_id' => $plan->id,
+            'status' => 'active',
+            'payment_method' => 'manual',
+        ]);
+
+        $this->assertDatabaseHas('stores', ['id' => $store->id, 'is_premium' => true]);
+    }
+
+    public function test_assigning_free_plan_clears_premium_and_has_no_payment(): void
+    {
+        $free = $this->createPlan(['name' => 'Free', 'slug' => 'free', 'price_monthly' => 0, 'price_yearly' => 0]);
+        $store = Store::factory()->create(['is_premium' => true]);
+        $admin = $this->userWithRole('super_admin');
+
+        $this->actingAs($admin, 'api')
+            ->postJson('/api/admin/stores/'.$store->id.'/subscription', [
+                'plan_id' => $free->id,
+                'status' => 'active',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'active')
+            ->assertJsonPath('data.last_payment_at', null);
+
+        $this->assertDatabaseHas('stores', ['id' => $store->id, 'is_premium' => false]);
+    }
+
+    public function test_assigning_a_trial_does_not_record_a_payment(): void
+    {
+        $plan = $this->createPlan();
+        $store = Store::factory()->create();
+        $admin = $this->userWithRole('super_admin');
+
+        $this->actingAs($admin, 'api')
+            ->postJson('/api/admin/stores/'.$store->id.'/subscription', [
+                'plan_id' => $plan->id,
+                'status' => 'trialing',
+                'trial_days' => 7,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'trialing')
+            ->assertJsonPath('data.last_payment_at', null)
+            ->assertJsonPath('data.last_payment_amount', null);
+
+        $this->assertDatabaseHas('subscriptions', [
+            'store_id' => $store->id,
+            'status' => 'trialing',
+            'last_payment_at' => null,
+            'last_payment_amount' => null,
+        ]);
+
+        $this->assertNotNull(Subscription::where('store_id', $store->id)->first()->trial_ends_at);
+    }
+
+    public function test_assigning_a_plan_cancels_the_previous_active_subscription(): void
+    {
+        $oldPlan = $this->createPlan(['slug' => 'pro-old']);
+        $newPlan = $this->createPlan(['slug' => 'pro-new']);
+        $store = Store::factory()->create();
+        $old = $this->createSubscription($oldPlan, $store);
+        $admin = $this->userWithRole('super_admin');
+
+        $this->actingAs($admin, 'api')
+            ->postJson('/api/admin/stores/'.$store->id.'/subscription', [
+                'plan_id' => $newPlan->id,
+            ])
+            ->assertOk();
+
+        $old->refresh();
+        $this->assertSame('cancelled', $old->status);
+        $this->assertNotNull($old->cancelled_at);
+
+        $this->assertDatabaseHas('subscriptions', [
+            'store_id' => $store->id,
+            'plan_id' => $newPlan->id,
+            'status' => 'active',
+        ]);
+    }
+
+    public function test_assigning_subscription_requires_plan_id(): void
+    {
+        $store = Store::factory()->create();
+        $admin = $this->userWithRole('super_admin');
+
+        $this->actingAs($admin, 'api')
+            ->postJson('/api/admin/stores/'.$store->id.'/subscription', [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('plan_id');
+    }
+
+    public function test_assigning_subscription_to_unknown_store_returns_not_found(): void
+    {
+        $plan = $this->createPlan();
+        $admin = $this->userWithRole('super_admin');
+
+        $this->actingAs($admin, 'api')
+            ->postJson('/api/admin/stores/999999/subscription', ['plan_id' => $plan->id])
+            ->assertStatus(404);
+    }
+
+    public function test_expert_cannot_assign_subscriptions(): void
+    {
+        $plan = $this->createPlan();
+        $store = Store::factory()->create();
+        $expert = $this->userWithRole('expert');
+
+        $this->actingAs($expert, 'api')
+            ->postJson('/api/admin/stores/'.$store->id.'/subscription', ['plan_id' => $plan->id])
+            ->assertForbidden();
+    }
 }

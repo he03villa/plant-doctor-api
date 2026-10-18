@@ -136,6 +136,7 @@ Route::middleware('auth:api')->group(function () {
         Route::get('stores/{id}', [AdminStoreController::class, 'show']);
         Route::delete('stores/{id}', [AdminStoreController::class, 'destroy']);
         Route::patch('stores/{id}/toggle', [AdminStoreController::class, 'toggleActive']);
+        Route::post('stores/{id}/subscription', [AdminStoreController::class, 'assignSubscription']);
 
         // Admin — Products (global)
         Route::get('products', [AdminProductController::class, 'index']);

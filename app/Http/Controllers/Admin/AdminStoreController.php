@@ -3,18 +3,27 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AdminAssignSubscriptionRequest;
 use App\Http\Resources\StoreResource;
+use App\Http\Resources\SubscriptionResource;
+use App\Models\Plan;
 use App\Models\Store;
+use App\Services\SubscriptionService;
 use App\Traits\ApiResponseTrait;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
 
 class AdminStoreController extends Controller
 {
     use ApiResponseTrait;
+
+    public function __construct(
+        private SubscriptionService $subscriptionService
+    ) {}
 
     #[OA\Get(
         path: '/api/admin/stores',
@@ -118,6 +127,66 @@ class AdminStoreController extends Controller
             return $this->successResponse(new StoreResource($store), 'Store status updated');
         } catch (Exception $e) {
             return $this->errorResponse('Error updating store: '.$e->getMessage(), 500);
+        }
+    }
+
+    #[OA\Post(
+        path: '/api/admin/stores/{id}/subscription',
+        summary: 'Assign or change a store subscription plan (admin, no Stripe)',
+        tags: ['Admin - Stores'],
+        security: [['jwt' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                type: 'object',
+                required: ['plan_id'],
+                properties: [
+                    new OA\Property(property: 'plan_id', type: 'integer', example: 2),
+                    new OA\Property(property: 'billing_cycle', type: 'string', enum: ['monthly', 'yearly']),
+                    new OA\Property(property: 'status', type: 'string', enum: ['active', 'trialing']),
+                    new OA\Property(property: 'trial_days', type: 'integer', example: 14),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Subscription assigned'),
+            new OA\Response(response: 404, description: 'Store not found'),
+            new OA\Response(response: 422, description: 'Validation error'),
+            new OA\Response(response: 500, description: 'Server error'),
+        ]
+    )]
+    public function assignSubscription(AdminAssignSubscriptionRequest $request, int $id): JsonResponse
+    {
+        try {
+            $store = Store::find($id);
+
+            if (! $store) {
+                return $this->notFoundResponse('Store not found');
+            }
+
+            $validated = $request->validated();
+            $plan = Plan::find($validated['plan_id']);
+
+            if (! $plan) {
+                return $this->notFoundResponse('Plan not found');
+            }
+
+            $subscription = $this->subscriptionService->assignPlan(
+                $store,
+                $plan,
+                $validated['billing_cycle'] ?? 'monthly',
+                $validated['status'] ?? 'active',
+                $validated['trial_days'] ?? null
+            );
+
+            return $this->successResponse(new SubscriptionResource($subscription), 'Suscripción asignada');
+        } catch (ValidationException $e) {
+            return $this->validationErrorResponse($e->errors());
+        } catch (Exception $e) {
+            return $this->errorResponse('Error assigning subscription: '.$e->getMessage(), 500);
         }
     }
 
