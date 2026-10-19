@@ -16,7 +16,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('diagnoses', function (Blueprint $table) {
-            $table->foreignId('plant_id')->constrained()->cascadeOnDelete()->change();
+            $table->foreignId('plant_id')->nullable(false)->change();
         });
     }
 };
