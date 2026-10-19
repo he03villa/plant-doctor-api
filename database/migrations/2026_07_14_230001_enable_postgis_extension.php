@@ -13,7 +13,9 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::statement('DROP EXTENSION IF EXISTS postgis_topology');
-        DB::statement('DROP EXTENSION IF EXISTS postgis');
+        // Las extensiones PostGIS son infraestructura compartida
+        // (postgis_tiger_geocoder y otros objetos dependen de postgis).
+        // No se eliminan en rollback; up() las recrea idempotente
+        // con IF NOT EXISTS.
     }
 };
