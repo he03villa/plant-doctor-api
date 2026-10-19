@@ -64,7 +64,7 @@ class SetupStripePlans extends Command
                 ]);
                 $this->line("  Monthly price: {$monthlyPrice->id}", 'green');
 
-                $envKey = strtoupper($slug) . '_PRICE_MONTHLY';
+                $envKey = 'STRIPE_' . strtoupper($slug) . '_PRICE_MONTHLY';
                 $envUpdates[$envKey] = $monthlyPrice->id;
 
                 // Yearly price
@@ -78,7 +78,7 @@ class SetupStripePlans extends Command
                 ]);
                 $this->line("  Yearly price: {$yearlyPrice->id}", 'green');
 
-                $envKey = strtoupper($slug) . '_PRICE_YEARLY';
+                $envKey = 'STRIPE_' . strtoupper($slug) . '_PRICE_YEARLY';
                 $envUpdates[$envKey] = $yearlyPrice->id;
 
             } catch (Exception $e) {
