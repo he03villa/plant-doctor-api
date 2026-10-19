@@ -2,23 +2,22 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
-use Stripe\Stripe;
-use Stripe\Product;
-use Stripe\Price;
 use Exception;
+use Illuminate\Console\Command;
+use Stripe\Price;
+use Stripe\Product;
+use Stripe\Stripe;
 
 class SetupStripePlans extends Command
 {
     protected $signature = 'stripe:setup-plans';
-    protected $description = 'Create Stripe Products and Prices, then update .env';
+    protected $description = 'Create Stripe Products/Prices idempotently, update .env and sync plans to DB';
 
     public function handle(): int
     {
         $secret = config('services.stripe.secret');
 
-        if (!$secret) {
+        if (! $secret) {
             $this->error('STRIPE_SECRET is not configured in .env');
             return 1;
         }
@@ -38,60 +37,53 @@ class SetupStripePlans extends Command
             ],
         ];
 
+        $envPath = base_path('.env');
+        $envContent = is_readable($envPath) ? (string) file_get_contents($envPath) : '';
+
         $envUpdates = [];
 
         foreach ($plans as $slug => $plan) {
             $this->newLine();
-            $this->info("Creating {$plan['name']} product...");
+            $this->info("Procesando {$plan['name']}...");
 
             try {
-                $product = Product::create([
-                    'name' => $plan['name'],
-                    'description' => "{$plan['name']} for Plant Doctor viveros",
-                    'metadata' => ['plan_slug' => $slug],
-                ]);
+                $existing = $this->productsForSlug($slug);
 
-                $this->line("  Product created: {$product->id}", 'green');
+                $product = $this->resolveKeepProduct($slug, $existing, $envContent);
 
-                // Monthly price
-                $this->line("  Creating monthly price ($" . ($plan['monthly'] / 100) . ")...");
-                $monthlyPrice = Price::create([
-                    'product' => $product->id,
-                    'unit_amount' => $plan['monthly'],
-                    'currency' => strtolower(config('services.stripe.currency', 'usd')),
-                    'recurring' => ['interval' => 'month'],
-                    'metadata' => ['plan_slug' => $slug, 'interval' => 'monthly'],
-                ]);
-                $this->line("  Monthly price: {$monthlyPrice->id}", 'green');
+                if (! $product) {
+                    $product = Product::create([
+                        'name' => $plan['name'],
+                        'description' => "{$plan['name']} for Plant Doctor viveros",
+                        'metadata' => ['plan_slug' => $slug],
+                    ]);
+                    $this->line("  Producto creado: {$product->id}");
+                } else {
+                    $this->line("  Producto reutilizado: {$product->id}");
+                }
 
-                $envKey = 'STRIPE_' . strtoupper($slug) . '_PRICE_MONTHLY';
-                $envUpdates[$envKey] = $monthlyPrice->id;
+                // Archivar duplicados con el mismo plan_slug (auto-limpieza).
+                foreach ($existing as $duplicate) {
+                    if ($duplicate->id === $product->id) {
+                        continue;
+                    }
+                    $this->archiveProduct($duplicate);
+                    $this->line("  Duplicado archivado: {$duplicate->id}");
+                }
 
-                // Yearly price
-                $this->line("  Creating yearly price ($" . ($plan['yearly'] / 100) . ")...");
-                $yearlyPrice = Price::create([
-                    'product' => $product->id,
-                    'unit_amount' => $plan['yearly'],
-                    'currency' => strtolower(config('services.stripe.currency', 'usd')),
-                    'recurring' => ['interval' => 'year'],
-                    'metadata' => ['plan_slug' => $slug, 'interval' => 'yearly'],
-                ]);
-                $this->line("  Yearly price: {$yearlyPrice->id}", 'green');
+                $monthly = $this->ensurePrice($product, 'month', $plan['monthly'], $slug, 'monthly');
+                $yearly = $this->ensurePrice($product, 'year', $plan['yearly'], $slug, 'yearly');
 
-                $envKey = 'STRIPE_' . strtoupper($slug) . '_PRICE_YEARLY';
-                $envUpdates[$envKey] = $yearlyPrice->id;
-
+                $envUpdates['STRIPE_'.strtoupper($slug).'_PRICE_MONTHLY'] = $monthly->id;
+                $envUpdates['STRIPE_'.strtoupper($slug).'_PRICE_YEARLY'] = $yearly->id;
             } catch (Exception $e) {
-                $this->error("  Error creating {$plan['name']}: {$e->getMessage()}");
+                $this->error("  Error con {$plan['name']}: {$e->getMessage()}");
                 return 1;
             }
         }
 
         $this->newLine();
-        $this->info('Updating .env file...');
-
-        $envPath = base_path('.env');
-        $envContent = file_get_contents($envPath);
+        $this->info('Actualizando .env...');
 
         foreach ($envUpdates as $key => $value) {
             $pattern = "/^{$key}=.*/m";
@@ -102,18 +94,137 @@ class SetupStripePlans extends Command
             }
         }
 
-        file_put_contents($envPath, $envContent);
-        $this->line('  .env updated', 'green');
+        if (is_writable($envPath)) {
+            if (file_put_contents($envPath, $envContent) === false) {
+                $this->warn('  No se pudo escribir el .env.');
+            } else {
+                $this->line('  .env actualizado');
+            }
+        } else {
+            $this->warn('  El .env es de solo lectura (montado con :ro en docker-compose). Agregá estas líneas a mano en el .env del host:');
+            foreach ($envUpdates as $key => $value) {
+                $this->line("    {$key}={$value}");
+            }
+        }
 
-        $this->info('Running PlanSeeder...');
-        $this->call('db:seed', ['--class' => 'PlanSeeder']);
+        // Hacer visibles los valores en este proceso: env() se carga al arrancar
+        // y el .env recién escrito no se vuelve a leer, así que inyectamos
+        // los valores para que PlanSeeder los vea aunque haya config cacheada.
+        foreach ($envUpdates as $key => $value) {
+            putenv("{$key}={$value}");
+            $_ENV[$key] = $value;
+            $_SERVER[$key] = $value;
+        }
+
+        $this->info('Sincronizando planes en la BD (PlanSeeder)...');
+        $this->call('db:seed', ['--class' => 'PlanSeeder', '--force' => true]);
 
         $this->newLine();
-        $this->info('Done! Prices created and synced:');
+        $this->info('Listo. Precios sincronizados:');
         foreach ($envUpdates as $key => $value) {
             $this->line("  {$key}={$value}");
         }
 
         return 0;
+    }
+
+    /**
+     * Productos activos cuya metadata plan_slug coincide, del más antiguo al más nuevo.
+     */
+    private function productsForSlug(string $slug): array
+    {
+        $products = [];
+
+        foreach (Product::all(['limit' => 100])->data as $product) {
+            if (($product->metadata['plan_slug'] ?? null) === $slug && ($product->active ?? false)) {
+                $products[] = $product;
+            }
+        }
+
+        usort($products, fn (Product $a, Product $b) => $a->created <=> $b->created);
+
+        return $products;
+    }
+
+    /**
+     * Producto a conservar: el que referencian los price IDs actuales del .env;
+     * si no hay, el más antiguo. Devuelve null si no existe ninguno.
+     */
+    private function resolveKeepProduct(string $slug, array $existing, string $envContent): ?Product
+    {
+        if ($existing === []) {
+            return null;
+        }
+
+        foreach (['MONTHLY', 'YEARLY'] as $period) {
+            $pattern = '/^STRIPE_'.preg_quote(strtoupper($slug).'_PRICE_'.$period, '/').'=(\S+)/m';
+
+            if (! preg_match($pattern, $envContent, $matches)) {
+                continue;
+            }
+
+            try {
+                $price = Price::retrieve($matches[1]);
+            } catch (Exception $e) {
+                continue;
+            }
+
+            foreach ($existing as $product) {
+                if ($product->id === $price->product) {
+                    return $product;
+                }
+            }
+        }
+
+        return $existing[0];
+    }
+
+    /**
+     * Reutiliza el precio activo del intervalo indicado o lo crea si no existe.
+     */
+    private function ensurePrice(Product $product, string $interval, int $amount, string $slug, string $period): Price
+    {
+        $prices = Price::all([
+            'product' => $product->id,
+            'active' => true,
+            'limit' => 100,
+        ])->data;
+
+        foreach ($prices as $price) {
+            if (($price->recurring->interval ?? null) === $interval) {
+                $this->line("  Precio {$period} reutilizado: {$price->id}");
+
+                return $price;
+            }
+        }
+
+        $price = Price::create([
+            'product' => $product->id,
+            'unit_amount' => $amount,
+            'currency' => strtolower(config('services.stripe.currency', 'usd')),
+            'recurring' => ['interval' => $interval],
+            'metadata' => ['plan_slug' => $slug, 'interval' => $period],
+        ]);
+        $this->line("  Precio {$period} creado: {$price->id}");
+
+        return $price;
+    }
+
+    /**
+     * Archiva un producto y todos sus precios activos.
+     */
+    private function archiveProduct(Product $product): void
+    {
+        Product::update($product->id, ['active' => false]);
+
+        $prices = Price::all([
+            'product' => $product->id,
+            'active' => true,
+            'limit' => 100,
+        ])->data;
+
+        foreach ($prices as $price) {
+            Price::update($price->id, ['active' => false]);
+        }
     }
 }
